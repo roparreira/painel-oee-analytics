@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { COLORS } from '../config';
 
-const OEEGaugeCard = ({ value, target }) => {
+const OEEGaugeCard = memo(({ value, target }) => {
     const safeValue = isNaN(value) ? 0 : value;
     const isOk = safeValue >= target;
     const color = isOk ? COLORS.green : COLORS.red;
@@ -45,6 +45,6 @@ const OEEGaugeCard = ({ value, target }) => {
             </div>
         </div>
     );
-};
+});
 
 export default OEEGaugeCard;
