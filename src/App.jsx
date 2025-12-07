@@ -715,26 +715,26 @@ export default function App() {
                             )}
                         </div>
                         <div className="col-span-2 row-span-1">
-                            <Card className="h-full p-4 flex flex-row items-center justify-between bg-slate-50 border-slate-200">
-                                <div className="flex items-center gap-4 flex-1 min-w-0"> 
-                                    <div className="p-3 bg-white rounded-full shadow-sm shrink-0">
-                                        <Filter size={20} className="text-slate-400"/>
+                            <Card className="h-full p-3 flex flex-row items-center justify-between bg-slate-50 border-slate-200 overflow-hidden">
+                                <div className="flex items-center gap-3 flex-1 min-w-0 mr-2"> 
+                                    <div className="p-2.5 bg-white rounded-full shadow-sm shrink-0">
+                                        <Filter size={18} className="text-slate-400"/>
                                     </div>
-                                    <div className="flex-1">
-                                        <h4 className="text-sm font-bold text-slate-600">Eventos Pontuais (Ruído)</h4>
-                                        <p className="text-xs text-slate-400 line-clamp-2 md:line-clamp-1">
+                                    <div className="flex-1 min-w-0">
+                                        <h4 className="text-sm font-bold text-slate-600 truncate">Eventos Pontuais (Ruído)</h4>
+                                        <p className="text-[10px] text-slate-400 truncate" title="Eventos de baixa frequência e MTTR removidos para clareza (Princípio Pareto 80/20)">
                                             Eventos de baixa frequência e MTTR removidos para clareza (Princípio Pareto 80/20)
                                         </p>
                                     </div>
                                 </div>
-                                <div className="flex gap-8 px-6 border-l border-slate-200 shrink-0 h-full items-center">
-                                    <div className="text-center">
-                                        <span className="block text-2xl font-bold text-slate-700 leading-none">{jackKnifeData.noise.length}</span>
-                                        <span className="text-[10px] text-slate-400 uppercase font-bold">Eventos</span>
+                                <div className="flex gap-4 pl-4 border-l border-slate-200 shrink-0 h-full items-center justify-end">
+                                    <div className="text-center w-16">
+                                        <span className="block text-xl font-bold text-slate-700 leading-none">{jackKnifeData.noise.length}</span>
+                                        <span className="text-[9px] text-slate-400 uppercase font-bold block mt-0.5">Eventos</span>
                                     </div>
-                                    <div className="text-center">
-                                        <span className="block text-2xl font-bold text-slate-700 leading-none">{(jackKnifeData.noise.reduce((a,b)=>a+b.totalDuration,0)/60).toFixed(1)} h</span>
-                                        <span className="text-[10px] text-slate-400 uppercase font-bold">Total Parado</span>
+                                    <div className="text-center w-20">
+                                        <span className="block text-xl font-bold text-slate-700 leading-none">{(jackKnifeData.noise.reduce((a,b)=>a+b.totalDuration,0)/60).toFixed(1)} h</span>
+                                        <span className="text-[9px] text-slate-400 uppercase font-bold block mt-0.5">Total Parado</span>
                                     </div>
                                 </div>
                             </Card>
