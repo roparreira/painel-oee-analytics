@@ -1,8 +1,26 @@
 import { 
     parseDate, getProductionDate, formatDateISO, parseNumber, 
-    getMinutesInsideWindow, getAggregationKey, formatDateDisplay, formatDuration
+    getMinutesInsideWindow, getAggregationKey, formatDateDisplay, formatDuration, dayjs
 } from '../utils';
 import { TARGETS, BUSINESS_CONSTANTS } from '../config';
+
+// --- HELPERS DE REGRESSÃO (Para calcular Beta e Eta) ---
+const calculateLinearRegression = (data) => {
+    const N = data.length;
+    if (N < 2) return { slope: 0, intercept: 0 };
+    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+    
+    data.forEach(d => {
+        sumX += d.x;
+        sumY += d.y;
+        sumXY += d.x * d.y;
+        sumX2 += d.x * d.x;
+    });
+
+    const slope = (N * sumXY - sumX * sumY) / (N * sumX2 - sumX * sumX);
+    const intercept = (sumY - slope * sumX) / N;
+    return { slope, intercept };
+};
 
 // --- LEITURA DE ARQUIVOS (INGESTÃO) ---
 const readExcelToArray = (file) => {
@@ -11,8 +29,7 @@ const readExcelToArray = (file) => {
         reader.onload = (e) => {
             try {
                 const data = new Uint8Array(e.target.result);
-                // IMPORTANTE: Removemos 'cellDates' e mantemos 'raw: false' para que a data seja lida como string/número, 
-                // e tratada posteriormente pela nossa função parseDate customizada.
+                // Leitura de dados sem opções de data para forçar a interpretação numérica em parseNumber
                 const workbook = window.XLSX.read(data, { type: 'array' }); 
                 resolve(workbook);
             } catch (err) { reject(err); }
@@ -102,26 +119,22 @@ export const processFiles = async (fileStop, fileProd) => {
 
     // 2. Processar Produção
     const wbProd = await readExcelToArray(fileProd);
-    // CORREÇÃO: Ponto e vírgula removido
     const sheetProdName = wbProd.SheetNames.find(n => n.toLowerCase().includes('production') || n.toLowerCase().includes('produção'));
     
     if (!sheetProdName) throw new Error("Aba 'Production' não encontrada.");
 
     const wsProd = wbProd.Sheets[sheetProdName];
-    // Adicionamos { header: 1, defval: null } para leitura correta
+    // Adicionamos { header: 1, defval: null }
     const rowsProd = window.XLSX.utils.sheet_to_json(wsProd, { header: 1, defval: null });
 
     const cleanProd = {};
     let minDateFound = null, maxDateFound = null;
     let totalFornos = 0, totalProdReal = 0, totalWater = 0;
 
-    // As colunas 1, 3, 6, 9, 10, 20 são HARDCODED e dependem do layout do seu arquivo.
-    // Se o layout mudar, esses índices devem ser ajustados.
     for (let i = 0; i < rowsProd.length; i++) {
         const r = rowsProd[i];
         if (!r) continue;
         
-        // Coluna de data: Índice 1
         const d = parseDate(r[1]); 
         if (!d || String(r[1]).toLowerCase().includes('total')) continue;
         const iso = formatDateISO(d);
@@ -134,10 +147,11 @@ export const processFiles = async (fileStop, fileProd) => {
         let rawYield = parseNumber(r[10]);
         if (rawYield > 0 && rawYield < 1) rawYield = rawYield * 100;
 
-        const ovens = parseNumber(r[9]);       // Fornos (Índice 9)
-        const realCoke = parseNumber(r[3]);    // Produção Real (Índice 3)
-        const water = parseNumber(r[20]);      // Água (Índice 20)
-        const wetCharge = parseNumber(r[6]);   // Carga Úmida (Índice 6)
+        // Forçamos o parseNumber nas colunas de valor
+        const ovens = parseNumber(r[9]);       
+        const realCoke = parseNumber(r[3]);    
+        const water = parseNumber(r[20]);      
+        const wetCharge = parseNumber(r[6]);   
 
         totalFornos += ovens;
         totalProdReal += realCoke;
@@ -170,10 +184,11 @@ export const processFiles = async (fileStop, fileProd) => {
     };
 };
 
-// --- CÁLCULOS E AGREGAÇÕES (OEE, MTTR/MTBF, PARETO) ---
+// --- CÁLCULOS E AGREGAÇÕES ---
+// (O código de cálculo permanece o mesmo para MTTR, MTBF, Aggregates, e Weibull)
+// ... [Código de calculateOEEData, calculateDashboardAggregates, calculateTreeStats, calculateJackKnifeData, calculateReliabilityTrend, calculateWeibullData]
 
 export const calculateOEEData = (rawData, dateRange, aggregation, equipmentFilter) => {
-    // [CÓDIGO calculateOEEData COMPLETO]
     const { stops, prod } = rawData;
     const dates = Object.keys(prod).sort();
     if (dates.length === 0 || !dateRange.start || !dateRange.end) return [];
@@ -613,7 +628,7 @@ export const calculateReliabilityTrend = (rawData, dateRange, aggregation) => {
 export const calculateWeibullData = (rawData, equipmentFilter) => {
     // [CÓDIGO calculateWeibullData COMPLETO]
     if (!rawData.stops || rawData.stops.length === 0 || !equipmentFilter) {
-        return { data: [], ttfs: [], status: 'Selecione o equipamento' };
+        return { data: [], ttfs: [], status: 'Selecione o equipamento', parameters: {} };
     }
 
     const validStops = rawData.stops.filter(s => {
@@ -622,13 +637,10 @@ export const calculateWeibullData = (rawData, equipmentFilter) => {
         const isMaint = areaLower.includes('manut') || tipoLower.includes('corretiva') || tipoLower.includes('quebra');
         const isJanela = (s.bateria || '').toLowerCase().includes('janela');
         
-        // Deve ser uma falha não planejada e corresponder ao equipamento filtrado
         return isMaint && !isJanela && s.parou.includes('sim') && s.equip === equipmentFilter;
     });
     
-    // 1. Coletar os Tempos de Vida (TTFs)
     const events = validStops.sort((a, b) => a.start.getTime() - b.start.getTime());
-    
     let ttfs = [];
     let previousEndTime = null;
 
@@ -654,10 +666,10 @@ export const calculateWeibullData = (rawData, equipmentFilter) => {
     }
 
     if (ttfs.length < 3) {
-        return { data: [], ttfs, status: 'Mínimo de 3 falhas não programadas é necessário para análise de Weibull.', numFailures: ttfs.length };
+        return { data: [], ttfs, status: 'Mínimo de 3 falhas não programadas é necessário para análise de Weibull.', numFailures: ttfs.length, parameters: {} };
     }
     
-    // 2. Cálculo do Rank de Mediana (Median Rank) para plotagem
+    // 2. Cálculo do Rank de Mediana (Median Rank)
     ttfs.sort((a, b) => a - b);
     const N = ttfs.length;
     
@@ -665,10 +677,8 @@ export const calculateWeibullData = (rawData, equipmentFilter) => {
         const rank = i + 1;
         const medianRank = (rank - 0.3) / (N + 0.4);
         
-        // Y = ln(ln(1 / (1 - F(i))))
+        // Transformações Log-Log
         const yValue = Math.log(Math.log(1 / (1 - medianRank)));
-        
-        // X = ln(TTF)
         const xValue = Math.log(ttf);
 
         return {
@@ -680,11 +690,37 @@ export const calculateWeibullData = (rawData, equipmentFilter) => {
         };
     });
 
+    // 3. Cálculo dos Parâmetros de Weibull (Regressão Linear)
+    const { slope, intercept } = calculateLinearRegression(weibullData);
+
+    const beta = parseFloat(slope.toFixed(3)); // Beta (Parâmetro de Forma)
+    const eta = parseFloat(Math.exp(-intercept / beta).toFixed(3)); // Eta (Vida Característica)
+
+    // 4. Calcular a linha de regressão para plotagem no gráfico
+    const lineData = [
+        { x: weibullData[0].x, yLine: slope * weibullData[0].x + intercept },
+        { x: weibullData[N - 1].x, yLine: slope * weibullData[N - 1].x + intercept }
+    ];
+
+    let interpretation = 'Análise não disponível (Beta Indefinido).';
+    if (beta > 0) {
+        if (beta < 1) {
+            interpretation = "Desgaste Inicial (Infant Mortality) - Falhas mais prováveis no início da vida útil. Indicação: Reforçar inspeção inicial, melhorar o controle de qualidade ou quebra de componentes por erro de montagem.";
+        } else if (beta >= 1 && beta <= 1.5) { // Ajuste para B=1 (Constante) e início de desgaste
+            interpretation = "Taxa de Falha Constante (Aleatória) - A taxa de falha é constante (distribuição exponencial). A vida útil é imprevisível. Indicação: Reforçar manutenção preventiva (por tempo) e reduzir o estresse operacional.";
+        } else if (beta > 1.5) {
+            interpretation = "Desgaste Acelerado (Wear Out) - Falhas mais prováveis no final da vida útil. Indicação: Trocar componentes por manutenção preditiva/planejada no tempo 'eta' (vida característica).";
+        }
+    }
+
+
     return { 
         data: weibullData, 
         ttfs, 
         status: `Análise gerada com ${N} falhas.`,
-        numFailures: N
+        numFailures: N,
+        parameters: { beta, eta, interpretation },
+        lineData: lineData
     };
 };
 

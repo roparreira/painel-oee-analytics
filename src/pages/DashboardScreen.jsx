@@ -14,7 +14,7 @@ import { calculateOEEData, calculateDashboardAggregates, calculateTreeStats, cal
 
 export default function DashboardScreen({ rawData, initialDateRange }) {
     const [activeTab, setActiveTab] = useState('overview');
-    const [activeReliabilitySubTab, setActiveReliabilitySubTab] = useState('jackknife');
+    const [activeReliabilitySubTab, setActiveReliabilitySubTab] = useState('weibull'); 
     const [aggregation, setAggregation] = useState('month'); 
     const [dateRange, setDateRange] = useState(initialDateRange);
     
@@ -26,6 +26,7 @@ export default function DashboardScreen({ rawData, initialDateRange }) {
     const [calculatedData, setCalculatedData] = useState([]);
     
     const [weibullEquipmentFilter, setWeibullEquipmentFilter] = useState(null);
+    const [weibullPeriodFilters, setWeibullPeriodFilters] = useState([]); 
 
     useEffect(() => { setFilterSelection(null); }, [aggregation, dateRange]);
 
@@ -41,6 +42,8 @@ export default function DashboardScreen({ rawData, initialDateRange }) {
         return Array.from(uniqueEquips).sort();
     }, [rawData]);
 
+    const periodOptions = calculatedData.map(d => ({ label: d.label, key: d.key }));
+
 
     const activeAggregates = useMemo(() => calculateDashboardAggregates(calculatedData, rawData, dateRange, filterSelection), [calculatedData, filterSelection, rawData, dateRange]);
     const treeStats = useMemo(() => calculateTreeStats(calculatedData, filterSelection), [calculatedData, filterSelection]);
@@ -49,11 +52,12 @@ export default function DashboardScreen({ rawData, initialDateRange }) {
     const reliabilityTrendData = useMemo(() => {
         return calculateReliabilityTrend(rawData, dateRange, aggregation);
     }, [rawData, dateRange, aggregation]);
+
     const weibullData = useMemo(() => {
         return calculateWeibullData(rawData, weibullEquipmentFilter);
     }, [rawData, weibullEquipmentFilter]);
     
-
+    
     const handleBarToggle = (key) => setFilterSelection(prev => prev === key ? null : key);
     const handleChartDrillDown = (key, type) => {
         if (filterSelection === key && lossFilter === type) { setFilterSelection(null); setLossFilter(null); } 
@@ -117,8 +121,8 @@ export default function DashboardScreen({ rawData, initialDateRange }) {
                         </div>
                         <div className="col-span-1 md:col-span-2 2xl:col-span-12 2xl:row-span-2 min-h-[280px] 2xl:min-h-0"><TargetChart data={calculatedData} dataKey="oee" target={TARGETS.OEE} title="Evolução OEE Global (%)" colorLine={COLORS.lightGray} onBarClick={handleBarToggle} selectedKey={filterSelection}/></div>
                         <div className="col-span-1 2xl:col-span-4 2xl:row-span-2 min-h-[220px] 2xl:min-h-0"><TargetChart data={calculatedData} dataKey="avail" target={TARGETS.AVAIL} title="Disponibilidade (%)" colorLine={COLORS.lightGray} onBarClick={handleBarToggle} selectedKey={filterSelection}/></div>
-                        <div className="col-span-1 2xl:col-span-4 2xl:row-span-2 min-h-[220px] 2xl:min-h-0"><TargetChart data={calculatedData} dataKey="perf" target={TARGETS.PERF} title="Performance (%)" colorLine={COLORS.lightGray} onBarClick={handleBarToggle} selectedKey={filterSelection}/></div>
-                        <div className="col-span-1 2xl:col-span-4 2xl:row-span-2 min-h-[220px] 2xl:min-h-0"><TargetChart data={calculatedData} dataKey="qual" target={TARGETS.QUAL} title="Qualidade (%)" colorLine={COLORS.lightGray} yMax={110} onBarClick={handleBarToggle} selectedKey={filterSelection}/></div>
+                        <div className="col-span-1 2xl:col-span-4 2xl:row-span-2 min-h-[220px] 2xl:min-h-0"><TargetChart data={calculatedData} dataKey="perf" target={TARGETS.PERF} icon={Clock} colorLine={COLORS.lightGray} onBarClick={handleBarToggle} selectedKey={filterSelection}/></div>
+                        <div className="col-span-1 2xl:col-span-4 2xl:row-span-2 min-h-[220px] 2xl:min-h-0"><TargetChart data={calculatedData} dataKey="qual" target={TARGETS.QUAL} icon={CheckCircle} colorLine={COLORS.lightGray} yMax={110} onBarClick={handleBarToggle} selectedKey={filterSelection}/></div>
                     </div>
                 )}
                 
@@ -138,6 +142,9 @@ export default function DashboardScreen({ rawData, initialDateRange }) {
                             <div className="col-span-1 h-32"><CheckCardDual title="Pontualidade Início" valNorte={activeAggregates.winStartOkNorte} totalNorte={activeAggregates.daysWithStopNorte} valSul={activeAggregates.winStartOkSul} totalSul={activeAggregates.daysWithStopSul} sub="Início 08:00 ±15m" icon={PlayCircle} /></div>
                             <div className="col-span-1 h-32"><CheckCardDual title="Pontualidade Fim" valNorte={activeAggregates.winEndOkNorte} totalNorte={activeAggregates.daysWithStopNorte} valSul={activeAggregates.winEndOkSul} totalSul={activeAggregates.daysWithStopSul} sub="Término 13:00 ±15m" icon={StopCircle} /></div>
                             <div className="col-span-1 h-32"><CheckCardDual title="Dentro Horário" valNorte={activeAggregates.winInsideOkNorte} totalNorte={activeAggregates.daysWithStopNorte} valSul={activeAggregates.winInsideOkSul} totalSul={activeAggregates.daysWithStopSul} sub="Entre 08h-17h" icon={Maximize} /></div>
+                            <div className="col-span-1 h-32"><Card className="p-3 flex flex-col gap-2 border-l-4 h-full justify-between" style={{borderLeftColor: getLocalStatusColor(Math.min(activeAggregates.windowAvgDurNorte, activeAggregates.windowAvgDurSul)) }}><div><p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Duração</p><div className="flex gap-2"><div><span className="text-lg font-bold text-slate-700 block" style={{color: getLocalStatusColor(activeAggregates.windowAvgDurNorte)}}>{activeAggregates.windowAvgDurNorte}%</span><span className="text-[8px] text-slate-400">Norte</span></div><div className="w-px bg-slate-200"></div><div><span className="text-lg font-bold text-slate-700 block" style={{color: getLocalStatusColor(activeAggregates.windowAvgDurSul)}}>{activeAggregates.windowAvgDurSul}%</span><span className="text-[8px] text-slate-400">Sul</span></div></div></div><p className="text-[8px] text-slate-400 mt-1">Meta 5h/quench</p></Card></div>
+                            <div className="col-span-1 h-32"><CheckCardSingle title="Score Freq." value={activeAggregates.windowFreqScore} total={100} sub="Quenchs Parados" icon={Percent} /></div>
+                            <div className="col-span-1 h-32"><CheckCardDual title="Dias Sem Parada" valNorte={activeAggregates.daysWithoutStopNorte} totalNorte={activeAggregates.windowTotalDays} valSul={activeAggregates.winStartOkSul} totalSul={activeAggregates.daysWithStopSul} sub="Entre 08h-17h" icon={Maximize} /></div>
                             <div className="col-span-1 h-32"><Card className="p-3 flex flex-col gap-2 border-l-4 h-full justify-between" style={{borderLeftColor: getLocalStatusColor(Math.min(activeAggregates.windowAvgDurNorte, activeAggregates.windowAvgDurSul)) }}><div><p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Duração</p><div className="flex gap-2"><div><span className="text-lg font-bold text-slate-700 block" style={{color: getLocalStatusColor(activeAggregates.windowAvgDurNorte)}}>{activeAggregates.windowAvgDurNorte}%</span><span className="text-[8px] text-slate-400">Norte</span></div><div className="w-px bg-slate-200"></div><div><span className="text-lg font-bold text-slate-700 block" style={{color: getLocalStatusColor(activeAggregates.windowAvgDurSul)}}>{activeAggregates.windowAvgDurSul}%</span><span className="text-[8px] text-slate-400">Sul</span></div></div></div><p className="text-[8px] text-slate-400 mt-1">Meta 5h/quench</p></Card></div>
                             <div className="col-span-1 h-32"><CheckCardSingle title="Score Freq." value={activeAggregates.windowFreqScore} total={100} sub="Quenchs Parados" icon={Percent} /></div>
                             <div className="col-span-1 h-32"><CheckCardDual title="Dias Sem Parada" valNorte={activeAggregates.daysWithoutStopNorte} totalNorte={activeAggregates.windowTotalDays} valSul={activeAggregates.daysWithoutStopSul} totalSul={activeAggregates.windowTotalDays} sub="Sem registro" icon={CalendarX} /></div>
@@ -295,7 +302,7 @@ export default function DashboardScreen({ rawData, initialDateRange }) {
                                         </h3>
                                         <div className="flex-1 min-h-0">
                                             <WeibullChart 
-                                                data={weibullData.data} 
+                                                plotData={weibullData} 
                                                 ttfUnits="horas"
                                             />
                                         </div>
@@ -305,18 +312,40 @@ export default function DashboardScreen({ rawData, initialDateRange }) {
                                 <Card className="col-span-1 min-h-[250px] p-4 flex flex-col justify-between">
                                     <div>
                                         <h3 className="text-sm font-bold text-slate-700 mb-2 border-b pb-2">Resultados da Análise</h3>
-                                        <p className="text-xs text-slate-500 mb-2">Status: **{weibullData.status}**</p>
-                                        <p className="text-xs text-slate-500">Falhas analisadas (TTF): **{weibullData.numFailures || weibullData.ttfs.length}**</p>
                                         
+                                        <div className="flex justify-between text-xs my-1">
+                                            <span className="text-slate-500">Falhas analisadas (TTF):</span> 
+                                            <span className="font-bold text-slate-700">{weibullData.numFailures || weibullData.ttfs.length}</span>
+                                        </div>
+                                        
+                                        <div className="flex justify-between text-xs my-1">
+                                            <span className="text-slate-500 font-bold">Parâmetro Beta (Forma - β):</span>
+                                            <span className="font-bold text-orange-600">{weibullData.parameters.beta !== undefined ? weibullData.parameters.beta.toFixed(3) : '--'}</span>
+                                        </div>
+                                        
+                                        <div className="flex justify-between text-xs my-1 border-b pb-2">
+                                            <span className="text-slate-500 font-bold">Parâmetro Eta (Vida Caract. - η):</span>
+                                            <span className="font-bold text-orange-600">{weibullData.parameters.eta !== undefined ? weibullData.parameters.eta.toFixed(1) + ' h' : '--'}</span>
+                                        </div>
+                                        
+
                                         {weibullData.numFailures >= 3 && (
                                             <div className="mt-4">
-                                                <p className="text-sm font-bold text-blue-600">Próxima Etapa:</p>
-                                                <p className="text-xs text-slate-500">Ajustar a Linha de Regressão e calcular os parâmetros Beta (Forma) e Eta (Vida Característica).</p>
+                                                <p className="text-sm font-bold text-blue-600 mb-1">Interpretação (β)</p>
+                                                <p className="text-xs text-slate-600 italic">{weibullData.parameters.interpretation}</p>
                                             </div>
                                         )}
+
+                                         {weibullData.numFailures < 3 && weibullEquipmentFilter && (
+                                            <div className="mt-4 p-2 bg-red-100 rounded text-red-700">
+                                                <p className="text-xs font-bold">Dados Insuficientes:</p>
+                                                <p className="text-xs">Mínimo de 3 falhas é necessário para o cálculo estatístico de regressão (Beta/Eta).</p>
+                                            </div>
+                                        )}
+
                                     </div>
                                      <div className="text-xs text-slate-400 border-t pt-2 mt-auto">
-                                        *O gráfico de Weibull é plotado em escala log-log, transformando a Distribuição Weibull em uma linha reta.
+                                        *A linha de regressão (ajuste) é baseada no método Log-Log de Mediana de Rank.
                                     </div>
                                 </Card>
                             </div>
