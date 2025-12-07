@@ -364,16 +364,16 @@ export default function App() {
                             </div>
                         </div>
                         <div className="col-span-12 row-span-2">
-                            <TargetChart data={calculatedData} dataKey="oee" target={TARGETS.OEE} title="Evolução OEE (%)" colorLine={COLORS.blue} onBarClick={handleBarToggle} selectedKey={filterSelection}/>
+                            <TargetChart data={calculatedData} dataKey="oee" target={TARGETS.OEE} title="Evolução OEE Global (%)" colorLine={COLORS.lightGray} onBarClick={handleBarToggle} selectedKey={filterSelection}/>
                         </div>
                         <div className="col-span-4 row-span-2">
-                            <TargetChart data={calculatedData} dataKey="avail" target={TARGETS.AVAIL} title="Disp. (%)" colorLine={COLORS.red} onBarClick={handleBarToggle} selectedKey={filterSelection}/>
+                            <TargetChart data={calculatedData} dataKey="avail" target={TARGETS.AVAIL} title="Disponibilidade (%)" colorLine={COLORS.lightGray} onBarClick={handleBarToggle} selectedKey={filterSelection}/>
                         </div>
                         <div className="col-span-4 row-span-2">
-                            <TargetChart data={calculatedData} dataKey="perf" target={TARGETS.PERF} title="Perf. (%)" colorLine={COLORS.yellow} onBarClick={handleBarToggle} selectedKey={filterSelection}/>
+                            <TargetChart data={calculatedData} dataKey="perf" target={TARGETS.PERF} title="Performance (%)" colorLine={COLORS.lightGray} onBarClick={handleBarToggle} selectedKey={filterSelection}/>
                         </div>
                         <div className="col-span-4 row-span-2">
-                            <TargetChart data={calculatedData} dataKey="qual" target={TARGETS.QUAL} title="Qual. (%)" colorLine={COLORS.green} yMax={110} onBarClick={handleBarToggle} selectedKey={filterSelection}/>
+                            <TargetChart data={calculatedData} dataKey="qual" target={TARGETS.QUAL} title="Qualidade (%)" colorLine={COLORS.lightGray} yMax={110} onBarClick={handleBarToggle} selectedKey={filterSelection}/>
                         </div>
                     </div>
                 )}
@@ -784,6 +784,10 @@ export default function App() {
             </div>
         )}
       </main>
+      
+      <footer className="bg-slate-50 px-6 py-1 text-right shrink-0 z-10 border-t border-slate-100">
+          <p className="text-[10px] text-slate-400 italic">Desenvolvido pela Engenharia de Confiabilidade SunCoke Energy Brasil</p>
+      </footer>
     </div>
   );
 }
