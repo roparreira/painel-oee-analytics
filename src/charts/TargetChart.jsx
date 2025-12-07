@@ -5,7 +5,7 @@ import { COLORS } from '../config';
 
 const TargetChart = ({ data, dataKey, target, title, colorLine, yMax = 110, onBarClick, selectedKey }) => {
     return (
-        <Card className="p-3 h-full flex flex-col cursor-pointer transition hover:border-blue-300 group">
+        <Card className="p-3 h-full flex flex-col cursor-pointer transition hover:border-slate-300 group border-t-4" style={{ borderTopColor: colorLine }}>
             <div className="flex justify-between items-center mb-1">
                 <h3 className="text-xs font-bold uppercase text-slate-600 group-hover:text-blue-600 transition-colors">{title}</h3>
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">Meta: {target}%</span>

@@ -327,12 +327,12 @@ export default function App() {
                 {activeTab === 'overview' && (
                     <div className="grid grid-cols-12 grid-rows-6 gap-4 h-full pb-2">
                         <div className="col-span-2 row-span-2">
-                            <OEEGaugeCard value={parseFloat(activeAggregates.oee)} target={65} />
+                            <OEEGaugeCard value={parseFloat(activeAggregates.oee)} target={TARGETS.OEE} />
                         </div>
                         <div className="col-span-2 row-span-2 flex flex-col gap-2">
-                             <PillarCard title="Disponibilidade" value={activeAggregates.avail} target={90} icon={AlertTriangle}/>
-                             <PillarCard title="Performance" value={activeAggregates.perf} target={95} icon={Clock}/>
-                             <PillarCard title="Qualidade" value={activeAggregates.qual} target={72.15} icon={CheckCircle}/>
+                             <PillarCard title="Disponibilidade" value={activeAggregates.avail} target={TARGETS.AVAIL} icon={AlertTriangle} className="flex-1 min-h-0"/>
+                             <PillarCard title="Performance" value={activeAggregates.perf} target={TARGETS.PERF} icon={Clock} className="flex-1 min-h-0"/>
+                             <PillarCard title="Qualidade" value={activeAggregates.qual} target={TARGETS.QUAL} icon={CheckCircle} className="flex-1 min-h-0"/>
                         </div>
                         <Card className="col-span-5 row-span-2 p-4">
                             <div className="flex justify-between items-center mb-2">
@@ -364,16 +364,16 @@ export default function App() {
                             </div>
                         </div>
                         <div className="col-span-12 row-span-2">
-                            <TargetChart data={calculatedData} dataKey="oee" target={65} title="Evolução OEE (%)" colorLine={COLORS.blue} onBarClick={handleBarToggle} selectedKey={filterSelection}/>
+                            <TargetChart data={calculatedData} dataKey="oee" target={TARGETS.OEE} title="Evolução OEE (%)" colorLine={COLORS.blue} onBarClick={handleBarToggle} selectedKey={filterSelection}/>
                         </div>
                         <div className="col-span-4 row-span-2">
-                            <TargetChart data={calculatedData} dataKey="avail" target={90} title="Disp. (%)" colorLine={COLORS.red} onBarClick={handleBarToggle} selectedKey={filterSelection}/>
+                            <TargetChart data={calculatedData} dataKey="avail" target={TARGETS.AVAIL} title="Disp. (%)" colorLine={COLORS.red} onBarClick={handleBarToggle} selectedKey={filterSelection}/>
                         </div>
                         <div className="col-span-4 row-span-2">
-                            <TargetChart data={calculatedData} dataKey="perf" target={95} title="Perf. (%)" colorLine={COLORS.yellow} onBarClick={handleBarToggle} selectedKey={filterSelection}/>
+                            <TargetChart data={calculatedData} dataKey="perf" target={TARGETS.PERF} title="Perf. (%)" colorLine={COLORS.yellow} onBarClick={handleBarToggle} selectedKey={filterSelection}/>
                         </div>
                         <div className="col-span-4 row-span-2">
-                            <TargetChart data={calculatedData} dataKey="qual" target={72.15} title="Qual. (%)" colorLine={COLORS.green} yMax={110} onBarClick={handleBarToggle} selectedKey={filterSelection}/>
+                            <TargetChart data={calculatedData} dataKey="qual" target={TARGETS.QUAL} title="Qual. (%)" colorLine={COLORS.green} yMax={110} onBarClick={handleBarToggle} selectedKey={filterSelection}/>
                         </div>
                     </div>
                 )}
@@ -401,7 +401,7 @@ export default function App() {
 
                             <div className="col-span-2 h-24"><ComparisonCard title="Fornos Produzidos" target={activeAggregates.targetOvens} real={activeAggregates.ovensNumeric} unit="un" inverse={false}/></div>
                             <div className="col-span-2 h-24"><ComparisonCard title="Troca de Turno" target={activeAggregates.targetShiftChange} real={activeAggregates.shiftLossMins / 60} inverse={true} showDeviationOnly={true}/></div>
-                            <div className="col-span-2 h-24"><ComparisonCard title="Perda Operacional" target={0} real={(activeAggregates.opsLossMins + activeAggregates.extProdMins + activeAggregates.outsideProdMins) / 60} inverse={true}/></div>
+                            <div className="col-span-2 h-24"><ComparisonCard title="Perda Operacional" target={0} real={(activeAggregates.opsLossMins) / 60} inverse={true}/></div>
 
                             {/* LINHA 3: CHECKLIST DE JANELA (Movida para baixo com Legenda) */}
                             <div className="col-span-6 mt-3 mb-1 flex items-center gap-2">
@@ -451,10 +451,10 @@ export default function App() {
                     </div>
                 )}
 
-                {/* Restante das abas (tree, losses, reliability, breakdown) mantidas inalteradas... */}
+                {/* ABA ÁRVORE OEE ATUALIZADA */}
                 {activeTab === 'tree' && treeStats && (
                     <div className="h-full relative overflow-auto pb-4">
-                        {/* 1. Resultado da Produção no canto superior esquerdo (Absoluto ou Grid) */}
+                        {/* 1. Resultado da Produção */}
                         <div className="absolute top-0 left-0 z-20">
                             <div className="p-3 bg-orange-50 border border-orange-100 rounded-xl shadow-sm w-48">
                                 <h4 className="text-[10px] font-bold text-orange-800 mb-2 uppercase tracking-wide">Resultado da Produção</h4>
@@ -489,7 +489,7 @@ export default function App() {
 
                                 return (
                                     <>
-                                        {/* OEE Global Card */}
+                                        {/* OEE Global Card - Padrão Mantido */}
                                         <div className="flex flex-col items-center mb-8 relative z-10 w-full max-w-4xl">
                                             <Card className="w-64 p-4 border-t-4 text-center shadow-lg" style={{borderTopColor: colorOee}}>
                                                 <h3 className="font-bold text-slate-500 uppercase text-xs mb-1">OEE Global</h3>
@@ -505,19 +505,19 @@ export default function App() {
                                             <div className="h-px bg-slate-300 w-[70%]"></div>
                                         </div>
 
-                                        {/* Cards de Nível 2 */}
+                                        {/* Cards de Nível 2 - SUBSTITUÍDOS POR PILLARCARD COM ÍCONES */}
                                         <div className="flex justify-between w-full max-w-5xl px-4 mb-8 relative z-10 gap-4">
                                             
                                             {/* Disponibilidade */}
                                             <div className="flex flex-col items-center relative">
                                                 <div className="h-4 w-px bg-slate-300 absolute -top-8"></div>
-                                                <Card className="w-64 p-4 border-t-4 text-center shadow-md hover:shadow-lg transition-all mb-4" style={{borderTopColor: colorAvail}}>
-                                                    <h3 className="font-bold text-slate-500 uppercase text-xs mb-1 flex justify-center items-center gap-1">
-                                                        <AlertTriangle size={12} style={{color: colorAvail}}/> Disponibilidade
-                                                    </h3>
-                                                    <span className="text-3xl font-bold block" style={{color: colorAvail}}>{activeAggregates.avail}%</span>
-                                                    <span className="text-[10px] text-slate-400 mt-1 block">T. Operando / T. Carregado</span>
-                                                </Card>
+                                                <PillarCard 
+                                                    title="Disponibilidade" 
+                                                    value={activeAggregates.avail} 
+                                                    target={TARGETS.AVAIL} 
+                                                    icon={AlertTriangle}
+                                                    className="w-64 mb-4 shadow-md hover:shadow-lg transition-all"
+                                                />
                                                 <div className="h-6 w-px bg-slate-300 mb-2"></div>
                                                 
                                                 <div className="bg-white border border-slate-200 rounded-lg p-2 text-left w-64 text-xs shadow-sm space-y-1">
@@ -536,13 +536,13 @@ export default function App() {
                                             {/* Performance */}
                                             <div className="flex flex-col items-center relative">
                                                 <div className="h-4 w-px bg-slate-300 absolute -top-8"></div>
-                                                <Card className="w-64 p-4 border-t-4 text-center shadow-md hover:shadow-lg transition-all mb-4" style={{borderTopColor: colorPerf}}>
-                                                    <h3 className="font-bold text-slate-500 uppercase text-xs mb-1 flex justify-center items-center gap-1">
-                                                        <Clock size={12} style={{color: colorPerf}}/> Performance
-                                                    </h3>
-                                                    <span className="text-3xl font-bold block" style={{color: colorPerf}}>{activeAggregates.perf}%</span>
-                                                    <span className="text-[10px] text-slate-400 mt-1 block">T. Líquido / T. Operando</span>
-                                                </Card>
+                                                <PillarCard 
+                                                    title="Performance" 
+                                                    value={activeAggregates.perf} 
+                                                    target={TARGETS.PERF} 
+                                                    icon={Clock}
+                                                    className="w-64 mb-4 shadow-md hover:shadow-lg transition-all"
+                                                />
                                                 <div className="h-6 w-px bg-slate-300 mb-2"></div>
                                                 
                                                 <div className="bg-white border border-slate-200 rounded-lg p-2 text-left w-64 text-xs shadow-sm space-y-1">
@@ -552,6 +552,15 @@ export default function App() {
                                                     <MiniDreRow label="Ritmo Forno a Forno" value={treeStats.rhythmLoss.val} target={treeStats.rhythmLoss.target} />
                                                     <MiniDreRow label="Perda Operacional" value={treeStats.opsLoss.val} target={treeStats.opsLoss.target} />
                                                     <MiniDreRow label="Troca de Turno" value={treeStats.shiftLoss.val} target={treeStats.shiftLoss.target} />
+                                                    
+                                                    {/* NOVA SEÇÃO DE DADOS OPERACIONAIS */}
+                                                    <div className="border-t border-slate-100 pt-1 mt-1 text-[10px] text-slate-500 space-y-0.5">
+                                                         <div className="flex justify-between"><span>Fornos:</span> <span className="font-bold">{treeStats.totalOvens}</span></div>
+                                                         <div className="flex justify-between"><span>Volume:</span> <span className="font-bold">{treeStats.totalVolume} t</span></div>
+                                                         <div className="flex justify-between"><span>Ciclo Médio:</span> <span className="font-bold">{treeStats.avgCycle} min</span></div>
+                                                         <div className="flex justify-between"><span>Ciclo Líquido:</span> <span className="font-bold">{treeStats.netCycle} min</span></div>
+                                                    </div>
+
                                                     <div className="flex justify-between items-center border-t-2 border-slate-100 pt-2 mt-1">
                                                         <span className="font-bold text-slate-700">T. Líquido</span>
                                                         <span className="font-bold text-slate-700 bg-slate-100 px-1.5 rounded">{treeStats.netOperating} h</span>
@@ -562,13 +571,13 @@ export default function App() {
                                             {/* Qualidade */}
                                             <div className="flex flex-col items-center relative">
                                                 <div className="h-4 w-px bg-slate-300 absolute -top-8"></div>
-                                                <Card className="w-64 p-4 border-t-4 text-center shadow-md hover:shadow-lg transition-all mb-4" style={{borderTopColor: colorQual}}>
-                                                    <h3 className="font-bold text-slate-500 uppercase text-xs mb-1 flex justify-center items-center gap-1">
-                                                        <CheckCircle size={12} style={{color: colorQual}}/> Qualidade (Yield)
-                                                    </h3>
-                                                    <span className="text-3xl font-bold block" style={{color: colorQual}}>{activeAggregates.qual}%</span>
-                                                    <span className="text-[10px] text-slate-400 mt-1 block">Produtivo / T. Líquido</span>
-                                                </Card>
+                                                <PillarCard 
+                                                    title="Qualidade (Yield)" 
+                                                    value={activeAggregates.qual} 
+                                                    target={TARGETS.QUAL} 
+                                                    icon={CheckCircle}
+                                                    className="w-64 mb-4 shadow-md hover:shadow-lg transition-all"
+                                                />
                                                 <div className="h-6 w-px bg-slate-300 mb-2"></div>
                                                 
                                                 <div className="bg-white border border-slate-200 rounded-lg p-2 text-left w-64 text-xs shadow-sm space-y-1">
@@ -718,12 +727,12 @@ export default function App() {
                                         </p>
                                     </div>
                                 </div>
-                                <div className="flex gap-6 px-6 border-l border-slate-200 shrink-0">
-                                    <div className="text-right">
+                                <div className="flex gap-8 px-6 border-l border-slate-200 shrink-0 h-full items-center">
+                                    <div className="text-center">
                                         <span className="block text-2xl font-bold text-slate-700 leading-none">{jackKnifeData.noise.length}</span>
                                         <span className="text-[10px] text-slate-400 uppercase font-bold">Eventos</span>
                                     </div>
-                                    <div className="text-right">
+                                    <div className="text-center">
                                         <span className="block text-2xl font-bold text-slate-700 leading-none">{(jackKnifeData.noise.reduce((a,b)=>a+b.totalDuration,0)/60).toFixed(1)} h</span>
                                         <span className="text-[10px] text-slate-400 uppercase font-bold">Total Parado</span>
                                     </div>

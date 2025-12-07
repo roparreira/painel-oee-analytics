@@ -8,7 +8,7 @@ import {
     formatDateDisplay, 
     formatDuration
 } from '../utils';
-import { TARGETS } from '../config';
+import { TARGETS, BUSINESS_CONSTANTS } from '../config';
 
 // --- LEITURA DE ARQUIVOS (INGESTÃO) ---
 
@@ -152,7 +152,7 @@ export const processFiles = async (fileStop, fileProd) => {
         const ovens = parseNumber(r[9]);
         const realCoke = parseNumber(r[3]);
         const water = parseNumber(r[20]);
-        const wetCharge = parseNumber(r[6]);
+        const wetCharge = parseNumber(r[6]); 
 
         totalFornos += ovens;
         totalProdReal += realCoke;
@@ -191,6 +191,11 @@ export const calculateOEEData = (rawData, dateRange, aggregation, equipmentFilte
 
     const results = [];
 
+    // --- CÁLCULO DO CICLO TEÓRICO (CONSTANTE) ---
+    // Ciclo Teórico = Tempo Disponível Teórico / Fornos Teóricos
+    const timeAvailableTheory = BUSINESS_CONSTANTS.TC_META - BUSINESS_CONSTANTS.SL_THEORY;
+    const cycleTheory = (timeAvailableTheory * 60) / BUSINESS_CONSTANTS.FN_THEORY; // ~10 min
+
     dates.forEach(dateKey => {
         if (dateKey < dateRange.start || dateKey > dateRange.end) return;
         const p = prod[dateKey];
@@ -201,11 +206,14 @@ export const calculateOEEData = (rawData, dateRange, aggregation, equipmentFilte
         }
 
         const HOURS_PER_DAY = 48;
-        const TARGET_BUCKET = 10 * 60; // 600 min totais
-        const TARGET_BUCKET_QUENCH = 5 * 60; // 300 min por quench
+        const TARGET_MAINT_MINS = 10 * 60; // 10h Manutenção (Meta)
+        const TARGET_SHIFT_CHANGE = 3 * 60; // 3h Troca de Turno (Meta)
+        const TARGET_BUCKET_QUENCH = 5 * 60; // 5h por lado
+
         const dayOfWeek = p.date.getDay();
         const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
 
+        // -- 1. Processamento de Paradas --
         let dailyJanelaInsideNorte = 0;
         let dailyJanelaInsideSul = 0;
         let dailyJanelaOutside = 0;
@@ -222,7 +230,7 @@ export const calculateOEEData = (rawData, dateRange, aggregation, equipmentFilte
             const isJanela = bateriaLower.includes('janela a/b') || bateriaLower.includes('janela c/d');
             const isMaint = areaLower.includes('manut');
             const isProd = areaLower.includes('produção') || areaLower.includes('producao') || areaLower.includes('externo');
-
+            
             const isTurno = (ev.modo + ev.desc).toLowerCase().includes('turno') || (ev.modo + ev.desc).toLowerCase().includes('passagem');
 
             if (isJanela) {
@@ -244,110 +252,154 @@ export const calculateOEEData = (rawData, dateRange, aggregation, equipmentFilte
             }
         });
 
+        // -- 2. Cálculo da Disponibilidade (DI) --
+        
         const usedMaintNorte = Math.min(dailyJanelaInsideNorte, TARGET_BUCKET_QUENCH);
         const excessNorte = dailyJanelaInsideNorte - usedMaintNorte;
-
         const usedMaintSul = Math.min(dailyJanelaInsideSul, TARGET_BUCKET_QUENCH);
         const excessSul = dailyJanelaInsideSul - usedMaintSul;
-
+        
         const totalUsedMaint = usedMaintNorte + usedMaintSul;
-        const totalExcessInside = excessNorte + excessSul;
+        const totalExcessMaint = excessNorte + excessSul;
 
-        let targetMaint = TARGET_BUCKET;
-        let usedMaint = totalUsedMaint;
-        let extMaint = 0;
-        let outsideMaint = 0;
-        let usedProd = 0;
-        let extProd = 0;
-        let outsideProd = 0;
+        let extMaint = totalExcessMaint;
+        let outsideMaint = dailyJanelaOutside;
 
-        if (!isWeekend) {
-            extMaint = totalExcessInside;
-            outsideMaint = dailyJanelaOutside;
-        } else {
-            extProd = totalExcessInside;
-            outsideProd = dailyJanelaOutside;
-        }
-
-        const appliedSchedule = usedMaint + usedProd;
+        // Schedule Loss: Manutenção Usada + Troca de Turno (Menor entre Real e Meta 3h)
+        // Se shift < 3h, ganho vai para o Loading. Se > 3h, usa 3h no Schedule.
+        const shiftTimeForSchedule = shiftChange < TARGET_SHIFT_CHANGE ? shiftChange : TARGET_SHIFT_CHANGE;
+        const appliedSchedule = totalUsedMaint + shiftTimeForSchedule;
+        
         const calendar = HOURS_PER_DAY * 60;
         const loading = calendar - appliedSchedule;
         const loadingMins = loading;
 
+        // Excedente de Troca de Turno (> 3h)
+        // OBS: Não afeta Disponibilidade, vai para Performance.
+        const excessShift = Math.max(0, shiftChange - TARGET_SHIFT_CHANGE);
+
+        // Perda de Disponibilidade (Loss Disp) = Corretivas + Excedentes Janela
         const lossDisp = extMaint + outsideMaint + failureLoss;
+        
+        // Tempo Operando
         const operating = Math.max(0, loading - lossDisp);
 
-        const lossUtil = extProd + outsideProd + shiftChange + opsLoss;
+        // -- 3. Cálculo da Performance (PE Composta) --
+        
+        // A. AVOL (Aderência Volume)
+        const totalVolReal = p.wetCharge; 
+        const totalVolTheory = BUSINESS_CONSTANTS.FN_THEORY * BUSINESS_CONSTANTS.VOL_THEORY;
+        const AVOL = totalVolTheory > 0 ? (totalVolReal / totalVolTheory) : 0;
+
+        // B. UF (Utilização Física)
+        // OpsLoss agora inclui: opsLoss (apontado) + excessShift (Excesso de turno)
+        const lossUtil = opsLoss + excessShift; 
+        
+        const netOperating = Math.max(0, operating - lossUtil);
+        const UF = operating > 0 ? (netOperating / operating) : 0;
+
+        // C. ADFN (Calculado DINAMICAMENTE para o dia)
+        // Ciclo Real = Tempo Líquido / Fornos
+        const cycleReal = p.ovens > 0 ? (netOperating / p.ovens) : 0;
+        
+        // ADFN = Ciclo Teórico / Ciclo Real
+        const ADFN = cycleReal > 0 ? (cycleTheory / cycleReal) : 0;
+
+        const perfFinal = AVOL * UF * ADFN;
+
+        // -- 4. Qualidade e OEE --
+        
         const avail = loading > 0 ? (operating / loading) : 0;
-        const perfFinal = operating > 0 ? ((operating - lossUtil) / operating) : 0;
         const qual = p.yield / 100;
         const oee = avail * perfFinal * qual;
 
         results.push({
             date: dateKey,
             day: formatDateDisplay(dateKey),
-            calendar, loading, operating, lossDisp, lossUtil,
+            calendar, loading, operating, 
+            lossDisp, 
+            lossUtil, 
+            oee, avail, perf: perfFinal, qual,
             ovens: p.ovens,
             yield: p.yield,
             realCoke: p.realCoke,
             water: p.water,
+            wetCharge: p.wetCharge,
             failureLoss,
             extMaint,
             outsideMaint,
             shiftChange,
             opsLoss,
-            extProd,
-            outsideProd,
-            targetMaint,
-            usedMaint,
+            extProd: 0, 
+            outsideProd: 0,
+            targetMaint: TARGET_MAINT_MINS,
+            usedMaint: totalUsedMaint,
             loadingMins,
-            usedProd
+            excessShift,
+            AVOL, UF, ADFN,
+            netOperating
         });
     });
 
+    // --- AGREGAÇÃO ---
     const grouped = {};
     results.forEach(day => {
         const { key, label } = getAggregationKey(day.date, aggregation);
         if (!grouped[key]) {
             grouped[key] = {
                 key, label,
-                loading: 0, operating: 0, lossUtil: 0,
-                ovens: 0, yieldSum: 0, yieldCount: 0, days: 0,
-                lossDisp: 0, water: 0,
+                loading: 0, operating: 0, netOperating: 0,
+                lossDisp: 0, lossUtil: 0,
+                ovens: 0, wetCharge: 0,
+                yieldSum: 0, yieldCount: 0, days: 0,
+                water: 0,
                 failureLoss: 0, extMaint: 0, outsideMaint: 0,
-                shiftChange: 0, opsLoss: 0, extProd: 0, outsideProd: 0,
-                targetMaint: 0, usedMaint: 0, loadingMins: 0, usedProd: 0
+                shiftChange: 0, opsLoss: 0, excessShift: 0,
+                totalUsedMaint: 0, loadingMins: 0
             };
         }
         const g = grouped[key];
         g.loading += day.loading;
         g.operating += day.operating;
+        g.netOperating += day.netOperating;
+        g.lossDisp += day.lossDisp;
         g.lossUtil += day.lossUtil;
+        
         g.ovens += day.ovens;
+        g.wetCharge += day.wetCharge;
+        
         if (day.yield > 0) { g.yieldSum += day.yield; g.yieldCount++; }
         g.days++;
-        g.lossDisp += day.lossDisp;
+        
         g.water += day.water;
-
         g.failureLoss += day.failureLoss;
         g.extMaint += day.extMaint;
         g.outsideMaint += day.outsideMaint;
         g.shiftChange += day.shiftChange;
+        g.excessShift += day.excessShift;
         g.opsLoss += day.opsLoss;
-        g.extProd += day.extProd;
-        g.outsideProd += day.outsideProd;
-
-        g.targetMaint += day.targetMaint;
-        g.usedMaint += day.usedMaint;
+        g.totalUsedMaint += day.usedMaint;
         g.loadingMins += day.loadingMins;
-        g.usedProd += day.usedProd;
     });
 
     let finalResults = Object.values(grouped).map(g => {
         const avail = g.loading > 0 ? (g.operating / g.loading) : 0;
-        const perf = g.operating > 0 ? ((g.operating - g.lossUtil) / g.operating) : 0;
+        
+        // Recálculo Agregado
+        const totalVolTheory = g.days * BUSINESS_CONSTANTS.FN_THEORY * BUSINESS_CONSTANTS.VOL_THEORY;
+        const AVOL = totalVolTheory > 0 ? (g.wetCharge / totalVolTheory) : 0;
+        
+        const UF = g.operating > 0 ? (g.netOperating / g.operating) : 0;
+        
+        // ADFN Agregado: Ciclo Teórico / Ciclo Real Médio
+        const cycleRealAgg = g.ovens > 0 ? (g.netOperating / g.ovens) : 0;
+        const ADFN = cycleRealAgg > 0 ? (cycleTheory / cycleRealAgg) : 0;
+
+        const perf = AVOL * UF * ADFN;
+
         const avgYield = g.yieldCount > 0 ? (g.yieldSum / g.yieldCount) : 0;
         const qual = avgYield / 100;
+        
         const oee = avail * perf * qual;
 
         return {
@@ -356,6 +408,7 @@ export const calculateOEEData = (rawData, dateRange, aggregation, equipmentFilte
             avail: parseFloat((avail * 100).toFixed(1)),
             perf: parseFloat((perf * 100).toFixed(1)),
             qual: parseFloat(avgYield.toFixed(2)),
+            debug: { AVOL, UF, ADFN } 
         };
     });
 
@@ -376,6 +429,7 @@ export const calculateOEEData = (rawData, dateRange, aggregation, equipmentFilte
     return finalResults;
 };
 
+// ... Demais funções permanecem inalteradas ...
 export const calculateDashboardAggregates = (calculatedData, rawData, dateRange, filterSelection) => {
     const dataToAggregate = filterSelection 
         ? calculatedData.filter(d => d.key === filterSelection)
@@ -384,19 +438,39 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
     if(dataToAggregate.length === 0) return null;
     
     const sum = (key) => dataToAggregate.reduce((a,b)=>a+b[key],0);
-    const avg = (key) => sum(key) / dataToAggregate.length;
-
-    const totalDays = sum('days'); 
-    const targetOvens = 160 * totalDays; 
+    const totalDays = sum('days');
+    
+    const totalLoading = sum('loading');
+    const totalOperating = sum('operating');
+    const totalNetOperating = sum('netOperating');
+    const totalWetCharge = sum('wetCharge');
+    const totalYieldSum = sum('yieldSum');
+    const totalYieldCount = sum('yieldCount');
     const totalOvens = sum('ovens');
-    const avgOee = avg('oee');
-    
-    const ritmoMin = totalOvens > 0 ? (sum('operating') / totalOvens) : 0;
-    const ritmoMetaMin = targetOvens > 0 ? (sum('loading') / targetOvens) : 0;
-    
-    const targetShiftChange = totalDays * 3;
 
-    // Window Check
+    // ADFN Global
+    const timeAvailableTheory = BUSINESS_CONSTANTS.TC_META - BUSINESS_CONSTANTS.SL_THEORY;
+    const cycleTheory = (timeAvailableTheory * 60) / BUSINESS_CONSTANTS.FN_THEORY;
+    const cycleRealGlobal = totalOvens > 0 ? (totalNetOperating / totalOvens) : 0;
+    const ADFN_Global = cycleRealGlobal > 0 ? (cycleTheory / cycleRealGlobal) : 0;
+
+    const availGlobal = totalLoading > 0 ? (totalOperating / totalLoading) : 0;
+
+    const totalVolTheory = totalDays * BUSINESS_CONSTANTS.FN_THEORY * BUSINESS_CONSTANTS.VOL_THEORY;
+    const AVOL_Global = totalVolTheory > 0 ? (totalWetCharge / totalVolTheory) : 0;
+    const UF_Global = totalOperating > 0 ? (totalNetOperating / totalOperating) : 0;
+    
+    const perfGlobal = AVOL_Global * UF_Global * ADFN_Global;
+
+    const avgYieldGlobal = totalYieldCount > 0 ? (totalYieldSum / totalYieldCount) : 0;
+    const qualGlobal = avgYieldGlobal / 100;
+
+    const oeeGlobal = availGlobal * perfGlobal * qualGlobal;
+
+    const targetOvens = BUSINESS_CONSTANTS.FN_META * totalDays;
+    const ritmoMin = totalOvens > 0 ? (totalOperating / totalOvens) : 0;
+    const targetShiftChange = totalDays * 3 * 60; // min
+
     const checkDays = new Set();
     rawData.stops.forEach(s => {
         if(s.dateStr < dateRange.start || s.dateStr > dateRange.end) return;
@@ -408,9 +482,7 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
     let winInsideOkNorte = 0, winInsideOkSul = 0;
     let winDurPctNorteSum = 0, winDurPctSulSum = 0;
     let winFreqScoreSum = 0;
-    
-    let daysWithStopNorte = 0;
-    let daysWithStopSul = 0;
+    let daysWithStopNorte = 0, daysWithStopSul = 0;
 
     Array.from(checkDays).forEach(dateStr => {
         const dayStops = rawData.stops.filter(s => s.dateStr === dateStr);
@@ -442,8 +514,8 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
         });
 
         const targetStartH = 8, targetStartM = 0;
-        const targetEndH = 13, targetEndM = 0; // 13:00
-        const tol = 15; // min
+        const targetEndH = 13, targetEndM = 0;
+        const tol = 15;
         const absStartH = 8, absStartM = 0;
         const absEndH = 17, absEndM = 0;
 
@@ -459,13 +531,8 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
             if(!startObj || !endObj) return false;
             const sVal = startObj.getHours() * 60 + startObj.getMinutes();
             const eVal = endObj.getHours() * 60 + endObj.getMinutes();
-            
-            // CORREÇÃO: Tolerância de 15 minutos aplicada aos limites
-            // Limite Inferior: 08:00 - 15m = 07:45
             const minVal = (absStartH * 60 + absStartM) - tol;
-            // Limite Superior: 17:00 + 15m = 17:15
             const maxVal = (absEndH * 60 + absEndM) + tol;
-            
             return sVal >= minVal && eVal <= maxVal;
         };
 
@@ -494,10 +561,10 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
     const totalDaysWindow = Math.max(1, checkDays.size);
     
     return {
-        oee: avgOee.toFixed(1),
-        avail: avg('avail').toFixed(1),
-        perf: avg('perf').toFixed(1),
-        qual: avg('qual').toFixed(2),
+        oee: (oeeGlobal * 100).toFixed(1),
+        avail: (availGlobal * 100).toFixed(1),
+        perf: (perfGlobal * 100).toFixed(1),
+        qual: avgYieldGlobal.toFixed(2),
         water: sum('water').toFixed(0),
         ovensNumeric: totalOvens,
         ovensDisplay: totalOvens.toLocaleString('pt-BR'),
@@ -506,22 +573,17 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
         lossUtilH: (sum('lossUtil')/60).toFixed(1),
         lossFailH: (sum('failureLoss')/60).toFixed(1),
         ritmoDisplay: formatDuration(ritmoMin),
-        ritmoMetaDisplay: formatDuration(ritmoMetaMin),
         ritmoMin: ritmoMin,
-        ritmoMetaMin: ritmoMetaMin,
         failLossMins: sum('failureLoss'),
         schedMaintLossMins: sum('extMaint') + sum('outsideMaint'),
         opsLossMins: sum('opsLoss'),
         shiftLossMins: sum('shiftChange'),
-        targetMaintMins: sum('targetMaint'),
-        usedMaintMins: sum('usedMaint'),
+        targetMaintMins: totalDays * 10 * 60,
+        usedMaintMins: sum('totalUsedMaint'),
         loadingMins: sum('loadingMins'),
         extMaintMins: sum('extMaint'),
         outsideMaintMins: sum('outsideMaint'),
-        usedProdMins: sum('usedProd'),
-        extProdMins: sum('extProd'),
-        outsideProdMins: sum('outsideProd'),
-        targetShiftChange,
+        targetShiftChange: targetShiftChange / 60,
         totalCalendarTime: totalDays * 48 * 60,
         
         windowTotalDays: checkDays.size,
@@ -546,19 +608,23 @@ export const calculateTreeStats = (calculatedData, filterSelection) => {
     
     const loading = sum('loading');
     const operating = sum('operating');
-    const netOperating = Math.max(0, operating - sum('lossUtil'));
+    const netOperating = sum('netOperating');
     const failLoss = sum('failureLoss');
     const schedMaintLoss = sum('extMaint') + sum('outsideMaint');
-    const shiftLoss = sum('shiftChange');
+    const shiftLoss = sum('excessShift'); 
     const opsLossSum = sum('opsLoss');
-    const rhythmLossSum = sum('extProd') + sum('outsideProd');
+    
+    const totalOvens = sum('ovens');
+    const totalVolume = sum('wetCharge');
+    const avgCycle = totalOvens > 0 ? (operating / totalOvens).toFixed(2) : "0.00";
+    const netCycle = totalOvens > 0 ? (netOperating / totalOvens).toFixed(2) : "0.00";
+
     const avgYield = dataToUse.length > 0 ? (dataToUse.reduce((a,b) => a + b.qual, 0) / dataToUse.length) / 100 : 0;
     const fullyProductive = netOperating * avgYield;
     const lossQualityTime = netOperating - fullyProductive;
     
-    const targetLossDisp = loading * (1 - TARGETS.AVAIL/100);
-    const targetLossPerfTotal = operating * (1 - TARGETS.PERF/100);
-    const targetLossQual = netOperating * (1 - TARGETS.QUAL/100);
+    const targetLossDisp = loading * (1 - (TARGETS.AVAIL/100));
+    const targetLossQual = netOperating * (1 - (TARGETS.QUAL/100));
 
     return {
         loading: (loading/60).toFixed(1),
@@ -570,12 +636,17 @@ export const calculateTreeStats = (calculatedData, filterSelection) => {
         schedMaintLoss: { val: (schedMaintLoss/60).toFixed(1), target: 0 },
         lossPerf: (sum('lossUtil')/60).toFixed(1),
         shiftLoss: { val: (shiftLoss/60).toFixed(1), target: 0 }, 
-        rhythmLoss: { val: (rhythmLossSum/60).toFixed(1), target: (targetLossPerfTotal/60).toFixed(1) },
         opsLoss: { val: (opsLossSum/60).toFixed(1), target: 0 },
-        lossQual: { val: (lossQualityTime/60).toFixed(1), target: (targetLossQual/60).toFixed(1) }
+        rhythmLoss: { val: 0, target: 0 }, 
+        lossQual: { val: (lossQualityTime/60).toFixed(1), target: (targetLossQual/60).toFixed(1) },
+        totalOvens,
+        totalVolume: totalVolume.toFixed(0),
+        avgCycle,
+        netCycle
     };
 };
 
+// ... Resto das funções inalteradas ...
 export const calculateJackKnifeData = (rawData, dateRange) => {
     if (!rawData.stops || rawData.stops.length === 0) return { equip: [], comp: [], noise: [] };
 

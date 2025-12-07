@@ -240,24 +240,30 @@ export const BigNumberCard = ({ title, valueNumeric, displayValue, unit, target,
     );
 };
 
-// Card de Pilar OEE
-export const PillarCard = ({ title, value, target, icon: Icon }) => {
+// Card de Pilar OEE (Compacto & Alinhado - v2.4 Correção Responsiva)
+export const PillarCard = ({ title, value, target, icon: Icon, className = "" }) => {
     const numVal = parseFloat(value) || 0;
-    const isOk = numVal >= target;
+    const numTarget = parseFloat(target) || 0;
+    const isOk = numVal >= numTarget;
     const dynamicColor = isOk ? COLORS.green : COLORS.red;
 
     return (
-        <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-[0_2px_8px_rgba(0,0,0,0.04)] flex items-center justify-between relative overflow-hidden h-full group transition-all hover:shadow-md">
-            <div className={`absolute left-0 top-0 bottom-0 w-1.5 transition-all duration-300 group-hover:w-2`} style={{ backgroundColor: dynamicColor }}></div>
-            <div>
-                <p className="text-[10px] font-bold uppercase tracking-wide mb-1 text-slate-400">{title}</p>
-                <div className="flex items-baseline gap-1">
-                    <h3 className="text-xl font-bold" style={{ color: dynamicColor }}>{value}%</h3>
-                    <span className="text-[10px] text-gray-400">/ {target}%</span>
-                </div>
+        <div className={`bg-white rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-slate-100 flex flex-col justify-between p-2 h-full border-t-4 ${className}`} style={{ borderTopColor: dynamicColor }}>
+            <h3 className="text-[10px] font-bold uppercase text-slate-500 text-center mb-0 truncate px-1">{title}</h3>
+            <div className="flex-1 flex items-center justify-center">
+                <span className="text-xl font-bold" style={{ color: dynamicColor }}>{value}%</span>
             </div>
-            <div className="p-2 rounded-full bg-slate-50 group-hover:bg-white transition-colors">
-                <Icon size={18} style={{ color: dynamicColor }} />
+            {/* Rodapé flexível e robusto */}
+            <div className="border-t border-slate-50 pt-1 mt-0.5 flex justify-between items-center w-full text-[9px] text-slate-400">
+                <span className="flex-1 truncate mr-1 text-left min-w-0" title={`Meta: ${target}%`}>
+                    Meta: {target}%
+                </span>
+                <div className="flex items-center gap-1 shrink-0">
+                    {Icon && <Icon size={10} style={{ color: dynamicColor }} className="opacity-70"/>}
+                    <span style={{ color: dynamicColor }} className="text-[10px] font-bold">
+                        {isOk ? '▲' : '▼'}
+                    </span>
+                </div>
             </div>
         </div>
     );

@@ -1,11 +1,80 @@
 // src/config.js
 
-// --- CONSTANTES DE META ---
+// --- CONSTANTES DE NEGÓCIO (BUSINESS CONSTANTS) ---
+// Definidas pela Engenharia de Confiabilidade (OEE v2.3)
+// m = Meta, t = Teórico/Capacidade
+
+export const BUSINESS_CONSTANTS = {
+    // TEMPO (Horas)
+    TC_META: 48,       // Tempo Calendário
+    SL_META: 13,       // Schedule Loss Meta (10h Manut + 3h Turno)
+    SL_THEORY: 21.33333,
+    
+    CO_META: 3,        // Corretiva Aceitável (h)
+    CO_THEORY: 0,
+    
+    STP_META: 2,       // Setup/Limpeza Aceitável (h)
+    STP_THEORY: 0,
+
+    // PRODUÇÃO FÍSICA
+    FN_META: 160,      // Fornos/dia
+    FN_THEORY: 160,
+    
+    VOL_META: 40.31,   // Toneladas Carvão Úmido / Forno (Meta)
+    VOL_THEORY: 42.82, // Toneladas Carvão Úmido / Forno (Teórico)
+
+    // QUALIDADE
+    QA_META: 72.15,    // Yield (%)
+    QA_THEORY: 100
+};
+
+// --- CÁLCULO DE METAS (TARGETS) ---
+// Derivadas matematicamente das constantes acima para consistência total com o ETL
+
+// 1. Disponibilidade (DI)
+// Base: Loading Meta = 48h - 13h = 35h
+const loadingTimeMeta = BUSINESS_CONSTANTS.TC_META - BUSINESS_CONSTANTS.SL_META; 
+const operatingTimeMeta = loadingTimeMeta - BUSINESS_CONSTANTS.CO_META; // 35h - 3h = 32h
+const targetAvailPct = (operatingTimeMeta / loadingTimeMeta) * 100; // ~91.43%
+
+// 2. Performance (PE) - Fórmula Composta: AVOL * UF * ADFN
+
+// A. AVOL (Volume): (FNm * VOLm) / (FNt * VOLt)
+// Eficiência de massa em relação à capacidade máxima
+const massMeta = BUSINESS_CONSTANTS.FN_META * BUSINESS_CONSTANTS.VOL_META;
+const massTheory = BUSINESS_CONSTANTS.FN_THEORY * BUSINESS_CONSTANTS.VOL_THEORY;
+const targetAVOL = massMeta / massTheory; // ~0.9414
+
+// B. UF (Utilização Física): (NetOperating / Operating)
+// NetOperating Meta = 32h - 2h (Setup) = 30h
+const netOperatingTimeMeta = operatingTimeMeta - BUSINESS_CONSTANTS.STP_META; 
+const targetUF = netOperatingTimeMeta / operatingTimeMeta; // 30/32 = 0.9375
+
+// C. ADFN (Aderência Forno a Forno): Teórico / Meta
+// Ciclo Teórico = Tempo Disponível Teórico / Fornos Teóricos
+// Tempo Teórico = 48h - 21.33h (SLt) = 26.66h
+const timeAvailableTheory = BUSINESS_CONSTANTS.TC_META - BUSINESS_CONSTANTS.SL_THEORY;
+const cycleTheory = (timeAvailableTheory * 60) / BUSINESS_CONSTANTS.FN_THEORY; // ~10 min/forno
+
+// Ciclo Meta = Tempo Líquido Meta / Fornos Meta
+const cycleMeta = (netOperatingTimeMeta * 60) / BUSINESS_CONSTANTS.FN_META; // (30*60)/160 = 11.25 min/forno
+
+// Fator ADFN (Quanto menor o ciclo real/meta, melhor, então compara-se com o teórico que é o menor possível)
+const targetADFN = cycleTheory / cycleMeta; // 10 / 11.25 = 0.888...
+
+const targetPerfPct = (targetAVOL * targetUF * targetADFN) * 100; // ~78.45%
+
+// 3. Qualidade (QA)
+const targetQualPct = BUSINESS_CONSTANTS.QA_META; // 72.15%
+
+// 4. OEE
+const targetOeePct = (targetAvailPct / 100) * (targetPerfPct / 100) * (targetQualPct / 100) * 100; 
+
 export const TARGETS = {
-    OEE: 65,
-    AVAIL: 90,
-    PERF: 95,
-    QUAL: 72.15
+    OEE: parseFloat(targetOeePct.toFixed(2)),
+    AVAIL: parseFloat(targetAvailPct.toFixed(2)),
+    PERF: parseFloat(targetPerfPct.toFixed(2)),
+    QUAL: parseFloat(targetQualPct.toFixed(2))
 };
 
 // --- PALETA DE CORES ---
@@ -21,11 +90,10 @@ export const COLORS = {
     transparent: 'rgba(0,0,0,0)',
     offWhite: '#F8FAFC',
     faded: '#E2E8F0',
-    // Cores específicas para o fundo do Jack Knife (Tons pastéis transparentes)
     jackKnife: {
-        chronic: '#FEF3C7',      // Amarelo/Laranja claro (Bottom-Right)
-        acute: '#FFEDD5',        // Laranja claro (Top-Left)
-        acuteChronic: '#FEE2E2', // Vermelho claro (Top-Right)
-        ideal: '#DCFCE7'         // Verde claro (Bottom-Left)
+        chronic: '#FEF3C7',      
+        acute: '#FFEDD5',        
+        acuteChronic: '#FEE2E2', 
+        ideal: '#DCFCE7'         
     }
 };
