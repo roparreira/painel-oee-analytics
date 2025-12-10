@@ -11,6 +11,7 @@ import LossEvolutionChart from '../charts/LossEvolutionChart';
 import ReliabilityTrendChart from '../charts/ReliabilityTrendChart'; 
 import WeibullChart from '../charts/WeibullChart'; 
 import { calculateOEEData, calculateDashboardAggregates, calculateTreeStats, calculateJackKnifeData, calculateParetoData, calculateReliabilityTrend, calculateWeibullData } from '../services/etl';
+import { formatDateISO } from '../utils';
 
 export default function DashboardScreen({ rawData, initialDateRange }) {
     const [activeTab, setActiveTab] = useState('overview');
@@ -31,6 +32,15 @@ export default function DashboardScreen({ rawData, initialDateRange }) {
     useEffect(() => { setFilterSelection(null); }, [aggregation, dateRange]);
 
     useEffect(() => {
+        // CORREÇÃO FUNCIONAL: Apenas calcula se ambas as datas estiverem no formato ISO completo (YYYY-MM-DD)
+        const isDateRangeComplete = dateRange.start && dateRange.end && 
+                                    dateRange.start.length === 10 && dateRange.end.length === 10;
+        
+        if (!isDateRangeComplete) {
+             setCalculatedData([]); 
+             return;
+        }
+
         const results = calculateOEEData(rawData, dateRange, aggregation, equipmentFilter);
         setCalculatedData(results);
     }, [dateRange, aggregation, equipmentFilter, rawData]);
@@ -67,10 +77,24 @@ export default function DashboardScreen({ rawData, initialDateRange }) {
     const handleEquipmentToggle = (equipName) => setEquipmentFilter(prev => prev === equipName ? null : equipName);
     const getLocalStatusColor = (val) => { if(val < 50) return COLORS.red; if(val < 90) return COLORS.yellow; return COLORS.green; };
 
+    // CORREÇÃO FUNCIONAL: Adiciona validação para input de data
+    const handleDateChange = (type, value) => {
+        // Usa regex básica para verificar se a string é uma data ISO válida (YYYY-MM-DD)
+        const isIsoDate = value.match(/^\d{4}-\d{2}-\d{2}$/);
+        
+        // Atualiza o estado visualmente (necessário para o input type="date")
+        setDateRange(p => ({...p, [type]: value}));
+        
+        // A lógica de cálculo no useEffect agora só dispara quando ambos os campos são de 10 caracteres.
+        // Isso impede o loop de "Processando dados..." durante a digitação parcial (e.g., '2025-12-')
+    };
+
+
     if (!activeAggregates) return <div className="h-full flex items-center justify-center text-slate-400">Processando dados...</div>;
 
     return (
         <div className="flex flex-col h-full bg-slate-50">
+            {/* HEADER DE CONTROLES */}
             <div className="bg-white border-b border-slate-200 px-4 md:px-6 py-3 flex flex-col 2xl:flex-row items-center justify-between gap-4 shadow-sm shrink-0 z-20">
                 <div className="flex bg-slate-100 rounded-lg p-1 gap-1 overflow-x-auto shrink-0 w-full 2xl:w-auto no-scrollbar">
                     {['overview', 'tree', 'losses', 'reliability', 'breakdown', 'verification'].map(tab => (
@@ -97,9 +121,11 @@ export default function DashboardScreen({ rawData, initialDateRange }) {
                         <ChevronDown size={14} className="absolute right-2 top-2 text-slate-400 pointer-events-none group-hover:text-slate-600"/>
                     </div>
                     <div className="flex items-center gap-2 bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm w-full md:w-auto justify-between md:justify-start">
-                        <input type="date" value={dateRange.start} onChange={e => setDateRange(p => ({...p, start: e.target.value}))} className="bg-transparent text-xs font-medium focus:outline-none text-slate-700"/>
+                        {/* CORREÇÃO FUNCIONAL: Usa handleDateChange para data inicial */}
+                        <input type="date" value={dateRange.start} onChange={e => handleDateChange('start', e.target.value)} className="bg-transparent text-xs font-medium focus:outline-none text-slate-700"/>
                         <span className="text-slate-300 text-xs">→</span>
-                        <input type="date" value={dateRange.end} onChange={e => setDateRange(p => ({...p, end: e.target.value}))} className="bg-transparent text-xs font-medium focus:outline-none text-slate-700"/>
+                        {/* CORREÇÃO FUNCIONAL: Usa handleDateChange para data final */}
+                        <input type="date" value={dateRange.end} onChange={e => handleDateChange('end', e.target.value)} className="bg-transparent text-xs font-medium focus:outline-none text-slate-700"/>
                     </div>
                 </div>
             </div>
@@ -110,25 +136,41 @@ export default function DashboardScreen({ rawData, initialDateRange }) {
                 {activeTab === 'overview' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-12 auto-rows-min 2xl:grid-rows-6 gap-4 2xl:h-full pb-4 2xl:pb-2">
                         <div className="col-span-1 2xl:col-span-2 2xl:row-span-2 min-h-[220px] 2xl:min-h-0"><OEEGaugeCard value={parseFloat(activeAggregates.oee)} target={TARGETS.OEE} /></div>
-                        <div className="col-span-1 2xl:col-span-2 2xl:row-span-2 flex flex-col gap-2 min-h-[220px] 2xl:min-h-0"><PillarCard title="Disponibilidade" value={activeAggregates.avail} target={TARGETS.AVAIL} icon={AlertTriangle} className="flex-1 min-h-0"/><PillarCard title="Performance" value={activeAggregates.perf} target={TARGETS.PERF} icon={Clock} className="flex-1 min-h-0"/><PillarCard title="Qualidade" value={activeAggregates.qual} target={TARGETS.QUAL} icon={CheckCircle} className="flex-1 min-h-0"/></div>
+                        {/* CORREÇÃO VISUAL: Adicionando os títulos (rótulos) nos PillarCards */}
+                        <div className="col-span-1 2xl:col-span-2 2xl:row-span-2 flex flex-col gap-2 min-h-[220px] 2xl:min-h-0">
+                             {/* Título adicionado */}
+                             <PillarCard title="DISPONIBILIDADE" value={activeAggregates.avail} target={TARGETS.AVAIL} icon={AlertTriangle} className="flex-1 min-h-0"/>
+                              {/* Título adicionado */}
+                             <PillarCard title="PERFORMANCE" value={activeAggregates.perf} target={TARGETS.PERF} icon={Clock} className="flex-1 min-h-0"/>
+                              {/* Título adicionado */}
+                             <PillarCard title="QUALIDADE" value={activeAggregates.qual} target={TARGETS.QUAL} icon={CheckCircle} className="flex-1 min-h-0"/>
+                        </div>
                         <Card className="col-span-1 md:col-span-2 2xl:col-span-5 2xl:row-span-2 p-4 min-h-[280px] 2xl:min-h-0">
-                            <div className="flex justify-between items-center mb-2"><h3 className="text-sm font-bold uppercase flex items-center gap-2 text-slate-600"><TrendingDown size={16}/> Bridge de Perdas (Fornos)</h3><span className="text-xs bg-slate-100 px-2 py-1 rounded text-slate-500 font-medium">Meta → Realizado</span></div>
+                            <div className="flex justify-between items-center mb-2"><h3 className="text-sm font-bold uppercase flex items-center gap-2 text-slate-600"><TrendingDown size={16}/> BRIDGE DE PERDAS (FORNOS)</h3><span className="text-xs bg-slate-100 text-slate-500 px-2 py-1 rounded font-medium">Meta → Realizado</span></div>
                             <div className="flex-1 min-h-0"><BridgeChart aggregates={activeAggregates} /></div>
                         </Card>
                         <div className="col-span-1 md:col-span-2 2xl:col-span-3 2xl:row-span-2 flex flex-col gap-2 min-h-[200px] 2xl:min-h-0">
-                            <div className="flex-1"><BigNumberCard title="Total Fornos" valueNumeric={activeAggregates.ovensNumeric} displayValue={activeAggregates.ovensDisplay} unit="un" target={activeAggregates.targetOvens} compact={true}/></div>
-                            <div className="flex-1 bg-white rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] border-l-4 p-3 flex flex-col justify-between border border-slate-100" style={{ borderLeftColor: COLORS.orange }}><p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1 text-slate-400"><Timer size={12}/> Ritmo Médio</p><div className="flex items-baseline gap-1"><h3 className="text-2xl font-bold" style={{ color: COLORS.orange }}>{activeAggregates.ritmoDisplay}</h3><span className="text-[10px] font-medium text-gray-400">min/forno</span></div><div className="text-[9px] text-gray-400 border-t border-slate-50 pt-1 mt-1 flex justify-between"><span>Base: <strong>Loading / Realizado</strong></span></div></div>
+                            <div className="flex-1"><BigNumberCard title="TOTAL FORNOS" valueNumeric={activeAggregates.ovensNumeric} displayValue={activeAggregates.ovensDisplay} unit="un" target={activeAggregates.targetOvens} compact={true}/></div>
+                            <div className="flex-1 bg-white rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] border-l-4 p-3 flex flex-col justify-between border border-slate-100" style={{ borderLeftColor: COLORS.orange }}><p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1 text-slate-400"><Timer size={12}/> RITMO MÉDIO</p><div className="flex items-baseline gap-1"><h3 className="text-2xl font-bold" style={{ color: COLORS.orange }}>{activeAggregates.ritmoDisplay}</h3><span className="text-[10px] font-medium text-gray-400">min/forno</span></div><div className="text-[9px] text-gray-400 border-t border-slate-50 pt-1 mt-1 flex justify-between"><span>Base: <strong>Loading / Realizado</strong></span></div></div>
                         </div>
-                        <div className="col-span-1 md:col-span-2 2xl:col-span-12 2xl:row-span-2 min-h-[280px] 2xl:min-h-0"><TargetChart data={calculatedData} dataKey="oee" target={TARGETS.OEE} title="Evolução OEE Global (%)" colorLine={COLORS.lightGray} onBarClick={handleBarToggle} selectedKey={filterSelection}/></div>
-                        <div className="col-span-1 2xl:col-span-4 2xl:row-span-2 min-h-[220px] 2xl:min-h-0"><TargetChart data={calculatedData} dataKey="avail" target={TARGETS.AVAIL} title="Disponibilidade (%)" colorLine={COLORS.lightGray} onBarClick={handleBarToggle} selectedKey={filterSelection}/></div>
-                        <div className="col-span-1 2xl:col-span-4 2xl:row-span-2 min-h-[220px] 2xl:min-h-0"><TargetChart data={calculatedData} dataKey="perf" target={TARGETS.PERF} icon={Clock} colorLine={COLORS.lightGray} onBarClick={handleBarToggle} selectedKey={filterSelection}/></div>
-                        <div className="col-span-1 2xl:col-span-4 2xl:row-span-2 min-h-[220px] 2xl:min-h-0"><TargetChart data={calculatedData} dataKey="qual" target={TARGETS.QUAL} icon={CheckCircle} colorLine={COLORS.lightGray} yMax={110} onBarClick={handleBarToggle} selectedKey={filterSelection}/></div>
+                        <div className="col-span-1 md:col-span-2 2xl:col-span-12 2xl:row-span-2 min-h-[280px] 2xl:min-h-0">
+                            <TargetChart data={calculatedData} dataKey="oee" target={TARGETS.OEE} title="EVOLUÇÃO OEE GLOBAL (%)" colorLine={COLORS.lightGray} onBarClick={handleBarToggle} selectedKey={filterSelection}/>
+                        </div>
+                        <div className="col-span-1 2xl:col-span-4 2xl:row-span-2 min-h-[220px] 2xl:min-h-0">
+                            <TargetChart data={calculatedData} dataKey="avail" target={TARGETS.AVAIL} title="DISPONIBILIDADE (%)" colorLine={COLORS.lightGray} onBarClick={handleBarToggle} selectedKey={filterSelection}/>
+                        </div>
+                        <div className="col-span-1 2xl:col-span-4 2xl:row-span-2 min-h-[220px] 2xl:min-h-0">
+                            <TargetChart data={calculatedData} dataKey="perf" target={TARGETS.PERF} icon={Clock} title="PERFORMANCE (%)" colorLine={COLORS.lightGray} onBarClick={handleBarToggle} selectedKey={filterSelection}/>
+                        </div>
+                        <div className="col-span-1 2xl:col-span-4 2xl:row-span-2 min-h-[220px] 2xl:min-h-0">
+                            <TargetChart data={calculatedData} dataKey="qual" target={TARGETS.QUAL} icon={CheckCircle} title="QUALIDADE (%)" colorLine={COLORS.lightGray} yMax={110} onBarClick={handleBarToggle} selectedKey={filterSelection}/>
+                        </div>
                     </div>
                 )}
                 
-                {/* ABA 2: VERIFICAÇÃO */}
+                {/* ABA 5: CONFIABILIDADE */}
                 {activeTab === 'verification' && (
-                    <div className="h-full flex flex-col pb-4 overflow-y-auto">
+                    <div className="h-full overflow-hidden flex flex-col pb-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-6 gap-2 2xl:h-full content-start">
                             <div className="col-span-1 md:col-span-2 2xl:col-span-6 mb-1 flex items-center gap-2 mt-2"><div className="h-px bg-slate-300 flex-1"></div><span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Disponibilidade</span><div className="h-px bg-slate-300 flex-1"></div></div>
                             <div className="col-span-1 2xl:col-span-2 h-24"><ComparisonCard title="Manutenção Prog." target={activeAggregates.targetMaintMins / 60} real={(activeAggregates.usedMaintMins) / 60} inverse={true}/></div>
@@ -142,9 +184,6 @@ export default function DashboardScreen({ rawData, initialDateRange }) {
                             <div className="col-span-1 h-32"><CheckCardDual title="Pontualidade Início" valNorte={activeAggregates.winStartOkNorte} totalNorte={activeAggregates.daysWithStopNorte} valSul={activeAggregates.winStartOkSul} totalSul={activeAggregates.daysWithStopSul} sub="Início 08:00 ±15m" icon={PlayCircle} /></div>
                             <div className="col-span-1 h-32"><CheckCardDual title="Pontualidade Fim" valNorte={activeAggregates.winEndOkNorte} totalNorte={activeAggregates.daysWithStopNorte} valSul={activeAggregates.winEndOkSul} totalSul={activeAggregates.daysWithStopSul} sub="Término 13:00 ±15m" icon={StopCircle} /></div>
                             <div className="col-span-1 h-32"><CheckCardDual title="Dentro Horário" valNorte={activeAggregates.winInsideOkNorte} totalNorte={activeAggregates.daysWithStopNorte} valSul={activeAggregates.winInsideOkSul} totalSul={activeAggregates.daysWithStopSul} sub="Entre 08h-17h" icon={Maximize} /></div>
-                            <div className="col-span-1 h-32"><Card className="p-3 flex flex-col gap-2 border-l-4 h-full justify-between" style={{borderLeftColor: getLocalStatusColor(Math.min(activeAggregates.windowAvgDurNorte, activeAggregates.windowAvgDurSul)) }}><div><p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Duração</p><div className="flex gap-2"><div><span className="text-lg font-bold text-slate-700 block" style={{color: getLocalStatusColor(activeAggregates.windowAvgDurNorte)}}>{activeAggregates.windowAvgDurNorte}%</span><span className="text-[8px] text-slate-400">Norte</span></div><div className="w-px bg-slate-200"></div><div><span className="text-lg font-bold text-slate-700 block" style={{color: getLocalStatusColor(activeAggregates.windowAvgDurSul)}}>{activeAggregates.windowAvgDurSul}%</span><span className="text-[8px] text-slate-400">Sul</span></div></div></div><p className="text-[8px] text-slate-400 mt-1">Meta 5h/quench</p></Card></div>
-                            <div className="col-span-1 h-32"><CheckCardSingle title="Score Freq." value={activeAggregates.windowFreqScore} total={100} sub="Quenchs Parados" icon={Percent} /></div>
-                            <div className="col-span-1 h-32"><CheckCardDual title="Dias Sem Parada" valNorte={activeAggregates.daysWithoutStopNorte} totalNorte={activeAggregates.windowTotalDays} valSul={activeAggregates.winStartOkSul} totalSul={activeAggregates.daysWithStopSul} sub="Entre 08h-17h" icon={Maximize} /></div>
                             <div className="col-span-1 h-32"><Card className="p-3 flex flex-col gap-2 border-l-4 h-full justify-between" style={{borderLeftColor: getLocalStatusColor(Math.min(activeAggregates.windowAvgDurNorte, activeAggregates.windowAvgDurSul)) }}><div><p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Duração</p><div className="flex gap-2"><div><span className="text-lg font-bold text-slate-700 block" style={{color: getLocalStatusColor(activeAggregates.windowAvgDurNorte)}}>{activeAggregates.windowAvgDurNorte}%</span><span className="text-[8px] text-slate-400">Norte</span></div><div className="w-px bg-slate-200"></div><div><span className="text-lg font-bold text-slate-700 block" style={{color: getLocalStatusColor(activeAggregates.windowAvgDurSul)}}>{activeAggregates.windowAvgDurSul}%</span><span className="text-[8px] text-slate-400">Sul</span></div></div></div><p className="text-[8px] text-slate-400 mt-1">Meta 5h/quench</p></Card></div>
                             <div className="col-span-1 h-32"><CheckCardSingle title="Score Freq." value={activeAggregates.windowFreqScore} total={100} sub="Quenchs Parados" icon={Percent} /></div>
                             <div className="col-span-1 h-32"><CheckCardDual title="Dias Sem Parada" valNorte={activeAggregates.daysWithoutStopNorte} totalNorte={activeAggregates.windowTotalDays} valSul={activeAggregates.daysWithoutStopSul} totalSul={activeAggregates.windowTotalDays} sub="Sem registro" icon={CalendarX} /></div>
@@ -190,7 +229,7 @@ export default function DashboardScreen({ rawData, initialDateRange }) {
                                         <div className="flex flex-col 2xl:flex-row justify-between w-full max-w-5xl px-0 md:px-4 mb-8 relative z-10 gap-8 2xl:gap-4">
                                             <div className="flex flex-col items-center relative w-full">
                                                 <div className="h-4 w-px bg-slate-300 absolute -top-8 hidden 2xl:block"></div>
-                                                <PillarCard title="Disponibilidade" value={activeAggregates.avail} target={TARGETS.AVAIL} icon={AlertTriangle} className="w-full 2xl:w-64 mb-4 shadow-md hover:shadow-lg transition-all"/>
+                                                <PillarCard title="DISPONIBILIDADE" value={activeAggregates.avail} target={TARGETS.AVAIL} icon={AlertTriangle} className="w-full 2xl:w-64 mb-4 shadow-md hover:shadow-lg transition-all"/>
                                                 <div className="h-6 w-px bg-slate-300 mb-2 hidden 2xl:block"></div>
                                                 <div className="bg-white border border-slate-200 rounded-lg p-2 text-left w-full 2xl:w-64 text-xs shadow-sm space-y-1">
                                                     <div className="flex justify-between items-center text-slate-500 border-b border-slate-100 pb-1 mb-1 font-bold"><span>Detalhamento de Perdas</span></div>
@@ -201,7 +240,7 @@ export default function DashboardScreen({ rawData, initialDateRange }) {
                                             </div>
                                             <div className="flex flex-col items-center relative w-full">
                                                 <div className="h-4 w-px bg-slate-300 absolute -top-8 hidden 2xl:block"></div>
-                                                <PillarCard title="Performance" value={activeAggregates.perf} target={TARGETS.PERF} icon={Clock} className="w-full 2xl:w-64 mb-4 shadow-md hover:shadow-lg transition-all"/>
+                                                <PillarCard title="PERFORMANCE" value={activeAggregates.perf} target={TARGETS.PERF} icon={Clock} className="w-full 2xl:w-64 mb-4 shadow-md hover:shadow-lg transition-all"/>
                                                 <div className="h-6 w-px bg-slate-300 mb-2 hidden 2xl:block"></div>
                                                 <div className="bg-white border border-slate-200 rounded-lg p-2 text-left w-full 2xl:w-64 text-xs shadow-sm space-y-1">
                                                     <div className="flex justify-between items-center text-slate-500 border-b border-slate-100 pb-1 mb-1 font-bold"><span>Detalhamento de Perdas</span></div>
@@ -214,7 +253,7 @@ export default function DashboardScreen({ rawData, initialDateRange }) {
                                             </div>
                                             <div className="flex flex-col items-center relative w-full">
                                                 <div className="h-4 w-px bg-slate-300 absolute -top-8 hidden 2xl:block"></div>
-                                                <PillarCard title="Qualidade (Yield)" value={activeAggregates.qual} target={TARGETS.QUAL} icon={CheckCircle} className="w-full 2xl:w-64 mb-4 shadow-md hover:shadow-lg transition-all"/>
+                                                <PillarCard title="QUALIDADE (YIELD)" value={activeAggregates.qual} target={TARGETS.QUAL} icon={CheckCircle} className="w-full 2xl:w-64 mb-4 shadow-md hover:shadow-lg transition-all"/>
                                                 <div className="h-6 w-px bg-slate-300 mb-2 hidden 2xl:block"></div>
                                                 <div className="bg-white border border-slate-200 rounded-lg p-2 text-left w-full 2xl:w-64 text-xs shadow-sm space-y-1">
                                                     <div className="flex justify-between items-center text-slate-500 border-b border-slate-100 pb-1 mb-1 font-bold"><span>Detalhamento de Perdas</span></div>
@@ -250,7 +289,7 @@ export default function DashboardScreen({ rawData, initialDateRange }) {
                 {activeTab === 'reliability' && (
                     <div className="h-full flex flex-col gap-4">
                         <div className="flex bg-white rounded-xl p-1 gap-1 shadow-sm border border-slate-200 shrink-0 w-full md:w-auto">
-                            {[{key: 'jackknife', icon: ScatterChart, label: 'Jack Knife Estático'}, {key: 'trend', icon: LineChart, label: 'MTBF/MTTR Tendência'}, {key: 'weibull', icon: LifeBuoy, label: 'Análise Weibull'}].map(tab => (
+                            {[{key: 'jackknife', icon: ScatterChart, label: 'Diagrama Jack-Knife'}, {key: 'trend', icon: LineChart, label: 'MTBF/MTTR Tendência'}, {key: 'weibull', icon: LifeBuoy, label: 'Análise Weibull'}].map(tab => (
                                 <button key={tab.key} onClick={() => setActiveReliabilitySubTab(tab.key)} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${activeReliabilitySubTab===tab.key ? 'bg-orange-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}><tab.icon size={14}/> {tab.label}</button>
                             ))}
                         </div>
