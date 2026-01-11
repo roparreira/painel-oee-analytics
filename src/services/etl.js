@@ -682,6 +682,12 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
         targetShiftChange: targetShiftChange / 60,
         totalCalendarTime: totalDays * 48 * 60,
 
+        // Campos adicionais para BridgeChart Pátio
+        totalDays: totalDays,
+        totalWetCharge: totalWetCharge,
+        operatingMins: totalOperating,
+        netOperatingMins: totalNetOperating,
+
         windowTotalDays: checkDays.size,
         daysWithStopNorte, daysWithStopSul,
         daysWithoutStopNorte: checkDays.size - daysWithStopNorte,
