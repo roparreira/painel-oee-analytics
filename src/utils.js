@@ -25,6 +25,10 @@ export const parseNumber = (val) => {
     if (!val) return 0;
     let s = String(val).trim();
     if (s === '-' || s === '') return 0;
+
+    // Remover caracteres não numéricos (exceto vírgula, ponto e hífen)
+    s = s.replace(/[^\d,.\-]/g, '');
+
     const hasComma = s.includes(',');
     const hasDot = s.includes('.');
     if (hasComma && hasDot) {
@@ -32,7 +36,16 @@ export const parseNumber = (val) => {
         const lastDot = s.lastIndexOf('.');
         if (lastComma > lastDot) s = s.replace(/\./g, '').replace(',', '.');
         else s = s.replace(/,/g, '');
-    } else if (hasComma) s = s.replace(',', '.');
+    } else if (hasComma) {
+        // Se tem vírgula, verificar se é separador decimal ou de milhar
+        // Se tem mais de 3 dígitos após a vírgula, provavelmente é decimal
+        const afterComma = s.split(',')[1] || '';
+        if (afterComma.length <= 3) {
+            s = s.replace(',', '.');
+        } else {
+            s = s.replace(/,/g, '');
+        }
+    }
     const num = parseFloat(s);
     return isNaN(num) ? 0 : num;
 };
@@ -49,7 +62,7 @@ export const parseDate = (val) => {
         const match = val.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})(?:\s(\d{1,2}):(\d{1,2}))?/);
         if (match) {
             const day = parseInt(match[1], 10);
-            const month = parseInt(match[2], 10) - 1; 
+            const month = parseInt(match[2], 10) - 1;
             const year = parseInt(match[3], 10);
             const hour = match[4] ? parseInt(match[4], 10) : 0;
             const min = match[5] ? parseInt(match[5], 10) : 0;
@@ -64,7 +77,7 @@ export const parseDate = (val) => {
 export const getProductionDate = (date) => {
     const d = new Date(date);
     if (d.getHours() >= 12) d.setDate(d.getDate() + 1);
-    d.setHours(0,0,0,0);
+    d.setHours(0, 0, 0, 0);
     return d;
 };
 
@@ -73,37 +86,37 @@ export const formatDateISO = (date) => {
     return date.toISOString().split('T')[0];
 };
 
-export const formatDateDisplay = (iso) => { 
-    if(!iso) return '';
-    const [y,m,d] = iso.split('-'); 
-    return `${d}/${m}`; 
+export const formatDateDisplay = (iso) => {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-');
+    return `${d}/${m}`;
 };
 
 export const getMinutesInsideWindow = (start, end) => {
     if (!start || !end) return { total: 0, inside: 0, outside: 0 };
-    
+
     // Calcula duração total em minutos
     const totalDur = (end - start) / 1000 / 60;
-    
+
     // Define a janela de interesse no dia do início do evento
     // Janela: 08:00 às 13:00
     const winStart = new Date(start);
     winStart.setHours(8, 0, 0, 0);
-    
+
     const winEnd = new Date(start);
     winEnd.setHours(13, 0, 0, 0);
-    
+
     // Calcula o overlap (interseção)
     // Máximo entre (InicioEvento, InicioJanela)
     const effectiveStart = start < winStart ? winStart : start;
     // Mínimo entre (FimEvento, FimJanela)
     const effectiveEnd = end > winEnd ? winEnd : end;
-    
+
     let inside = (effectiveEnd - effectiveStart) / 1000 / 60;
-    
+
     // Se não houver overlap (ex: evento começa 14:00, effectiveStart(14:00) > effectiveEnd(13:00)), inside será negativo.
     if (inside < 0) inside = 0;
-    
+
     const outside = Math.max(0, totalDur - inside);
 
     return { total: totalDur, inside, outside };

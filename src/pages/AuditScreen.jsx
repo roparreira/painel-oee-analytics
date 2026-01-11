@@ -13,21 +13,31 @@ export default function AuditScreen({ auditStats, ignoredLog, onConfirm, onCance
                 <div className="flex items-center justify-between mb-8">
                     <div><h2 className="text-2xl font-bold text-slate-800">Validação de Dados</h2><p className="text-sm text-slate-500">Confira os totais identificados antes de calcular o OEE.</p></div>
                     <div className="flex gap-4">
-                        {ignoredLog && ignoredLog.length > 0 && (<button onClick={() => setShowLog(!showLog)} className="text-sm text-red-600 font-bold hover:underline flex items-center gap-1"><Info size={16}/> {ignoredLog.length} Linhas Ignoradas</button>)}
-                        <button onClick={onConfirm} className="text-white px-8 py-3 rounded-lg font-bold shadow-lg hover:shadow-xl transition-all flex items-center gap-2 bg-green-600 hover:bg-green-700"><CheckCircle size={18}/> Confirmar e Calcular</button>
+                        {ignoredLog && ignoredLog.length > 0 && (<button onClick={() => setShowLog(!showLog)} className="text-sm text-red-600 font-bold hover:underline flex items-center gap-1"><Info size={16} /> {ignoredLog.length} Linhas Ignoradas</button>)}
+                        <button onClick={onConfirm} className="text-white px-8 py-3 rounded-lg font-bold shadow-lg hover:shadow-xl transition-all flex items-center gap-2 bg-green-600 hover:bg-green-700"><CheckCircle size={18} /> Confirmar e Calcular</button>
                     </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <Card className="p-6 border-t-4" style={{borderTopColor: COLORS.red}}>
-                        <h3 className="font-bold mb-6 flex items-center gap-2 text-slate-700"><FileSearch style={{color: COLORS.red}}/> Auditoria de Paradas</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <Card className="p-6 border-t-4" style={{ borderTopColor: COLORS.red }}>
+                        <h3 className="font-bold mb-6 flex items-center gap-2 text-slate-700"><FileSearch style={{ color: COLORS.red }} /> Auditoria de Paradas (Máquinas)</h3>
                         <div className="space-y-4">
                             <AuditStat label="Eventos Válidos" value={auditStats.stops.count} sub="Filtro: Máquinas + Parou" color={COLORS.darkGray} icon={AlertTriangle} />
                             <AuditStat label="Tempo Total" value={auditStats.stops.totalHours + " h"} sub="Soma bruta" color={COLORS.red} icon={Clock} />
                             <AuditStat label="Manutenção" value={auditStats.stops.maintHours + " h"} sub="Área Técnica" color={COLORS.orange} icon={Settings} />
                         </div>
                     </Card>
-                    <Card className="p-6 border-t-4" style={{borderTopColor: COLORS.green}}>
-                        <h3 className="font-bold mb-6 flex items-center gap-2 text-slate-700"><Activity style={{color: COLORS.green}}/> Auditoria de Produção</h3>
+                    <Card className="p-6 border-t-4" style={{ borderTopColor: COLORS.yellow }}>
+                        <h3 className="font-bold mb-6 flex items-center gap-2 text-slate-700"><FileSearch style={{ color: COLORS.yellow }} /> Auditoria de Paradas (Pátio/Envio)</h3>
+                        <div className="space-y-4">
+                            <AuditStat label="Eventos Válidos" value={auditStats.stopsPatio?.count || 0} sub="Filtro: Pátio + Envio" color={COLORS.darkGray} icon={AlertTriangle} />
+                            <AuditStat label="Tempo Total" value={(auditStats.stopsPatio?.totalHours || 0) + " h"} sub="Todos os eventos" color={COLORS.yellow} icon={Clock} />
+                            {auditStats.despacho?.count > 0 && (
+                                <AuditStat label="Volume Despacho" value={auditStats.despacho.totalVolume.toLocaleString()} sub={`${auditStats.despacho.count} dias registrados`} color={COLORS.green} icon={Database} />
+                            )}
+                        </div>
+                    </Card>
+                    <Card className="p-6 border-t-4" style={{ borderTopColor: COLORS.green }}>
+                        <h3 className="font-bold mb-6 flex items-center gap-2 text-slate-700"><Activity style={{ color: COLORS.green }} /> Auditoria de Produção</h3>
                         <div className="grid grid-cols-2 gap-4">
                             <AuditStat label="Produção Total" value={parseInt(auditStats.prod.prodTons).toLocaleString()} sub="Toneladas" color={COLORS.green} icon={Database} />
                             <AuditStat label="Total Fornos" value={auditStats.prod.ovens} sub="Unidades" color={COLORS.darkGray} icon={BarChart2} />
