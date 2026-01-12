@@ -149,53 +149,63 @@ export const processFiles = async (fileStop, fileProd, fileDespacho = null) => {
         }
     }
 
-    // 2. Processar Produção (VTO - Máquinas)
-    const wbProd = await readExcelToArray(fileProd);
-    const sheetProdName = wbProd.SheetNames.find(n => n.toLowerCase().includes('production') || n.toLowerCase().includes('produção'));
-
-    if (!sheetProdName) throw new Error("Aba 'Production' não encontrada.");
-
-    const wsProd = wbProd.Sheets[sheetProdName];
-    const rowsProd = window.XLSX.utils.sheet_to_json(wsProd, { header: 1, defval: null });
-
+    // 2. Processar Produção (VTO - Máquinas) - Suporte a múltiplos arquivos
     const cleanProd = {};
     let minDateFound = null, maxDateFound = null;
     let totalFornos = 0, totalProdReal = 0, totalWater = 0;
 
-    for (let i = 0; i < rowsProd.length; i++) {
-        const r = rowsProd[i];
-        if (!r) continue;
+    // Normalizar para array sempre
+    const prodFiles = Array.isArray(fileProd) ? fileProd : [fileProd];
 
-        const d = parseDate(r[1]);
-        if (!d || String(r[1]).toLowerCase().includes('total')) continue;
-        const iso = formatDateISO(d);
-        if (!iso) continue;
+    for (const pFile of prodFiles) {
+        const wbProd = await readExcelToArray(pFile);
+        const sheetProdName = wbProd.SheetNames.find(n => n.toLowerCase().includes('production') || n.toLowerCase().includes('produção'));
 
-        if (!minDateFound || d < minDateFound) minDateFound = d;
-        if (!maxDateFound || d > maxDateFound) maxDateFound = d;
+        if (!sheetProdName) continue; // Pula se não achar a aba neste arquivo, ou lance erro se preferir rigor
 
-        // Leitura de Yield (Índice 10)
-        let rawYield = parseNumber(r[10]);
-        if (rawYield > 0 && rawYield < 1) rawYield = rawYield * 100;
+        const wsProd = wbProd.Sheets[sheetProdName];
+        const rowsProd = window.XLSX.utils.sheet_to_json(wsProd, { header: 1, defval: null });
 
-        const ovens = parseNumber(r[9]);
-        const realCoke = parseNumber(r[3]);
-        const water = parseNumber(r[20]);
-        const wetCharge = parseNumber(r[6]);
+        for (let i = 0; i < rowsProd.length; i++) {
+            const r = rowsProd[i];
+            if (!r) continue;
 
-        totalFornos += ovens;
-        totalProdReal += realCoke;
-        totalWater += water;
+            const d = parseDate(r[1]);
+            if (!d || String(r[1]).toLowerCase().includes('total')) continue;
+            const iso = formatDateISO(d);
+            if (!iso) continue;
 
-        // Filtrar linhas com Fornos e Carga Zerados
-        if (ovens === 0 && wetCharge === 0) continue;
+            // Atualiza range global de datas
+            if (!minDateFound || d < minDateFound) minDateFound = d;
+            if (!maxDateFound || d > maxDateFound) maxDateFound = d;
 
-        cleanProd[iso] = {
-            date: d,
-            planCoke: parseNumber(r[2]),
-            realCoke, ovens, yield: rawYield, water, wetCharge
-        };
+            // Leitura de Yield (Índice 10)
+            let rawYield = parseNumber(r[10]);
+            if (rawYield > 0 && rawYield < 1) rawYield = rawYield * 100;
+
+            const ovens = parseNumber(r[9]);
+            const realCoke = parseNumber(r[3]);
+            const water = parseNumber(r[20]);
+            const wetCharge = parseNumber(r[6]);
+
+            totalFornos += ovens;
+            totalProdReal += realCoke;
+            totalWater += water;
+
+            // Filtrar linhas com Fornos e Carga Zerados
+            if (ovens === 0 && wetCharge === 0) continue;
+
+            // Sobrescreve se já existir (mesma data em arquivos diferentes??) 
+            // ou apenas adiciona ao dicionário global
+            cleanProd[iso] = {
+                date: d,
+                planCoke: parseNumber(r[2]),
+                realCoke, ovens, yield: rawYield, water, wetCharge
+            };
+        }
     }
+
+    if (Object.keys(cleanProd).length === 0) throw new Error("Aba 'Production' não encontrada ou sem dados válidos nos arquivos de VTO.");
 
     let daysSpan = 0;
     if (minDateFound && maxDateFound) {

@@ -38,11 +38,26 @@ export default function UploadScreen({ onDataReady }) {
 
                     {/* VTO (Produção Máquinas) - Obrigatório */}
                     <div className="relative border-2 border-dashed border-slate-200 rounded-xl p-6 text-center hover:bg-slate-50 hover:border-green-400 transition-all group cursor-pointer">
-                        <input type="file" className="absolute inset-0 opacity-0 cursor-pointer z-10" accept=".xlsx,.xlsm" onChange={e => setFiles(prev => ({ ...prev, prod: e.target.files[0] }))} />
+                        <input
+                            type="file"
+                            className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                            accept=".xlsx,.xlsm"
+                            multiple
+                            onChange={e => {
+                                const files = Array.from(e.target.files);
+                                if (files.length > 0) {
+                                    setFiles(prev => ({ ...prev, prod: files }));
+                                }
+                            }}
+                        />
                         <div className="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform"><Activity style={{ color: COLORS.green }} /></div>
                         <p className="font-bold text-sm text-slate-700">VTO (Produção)</p>
-                        <p className="text-xs text-slate-400 mt-1">{files.prod ? files.prod.name : "Arraste ou clique"}</p>
-                        {files.prod && <div className="mt-2 text-xs font-bold text-green-600 flex justify-center items-center gap-1"><CheckCircle size={12} /> Carregado</div>}
+                        <p className="text-xs text-slate-400 mt-1">
+                            {files.prod && files.prod.length > 0
+                                ? `${files.prod.length} arquivo(s) selecionado(s)`
+                                : "Arraste ou clique (Múltiplos permitidos)"}
+                        </p>
+                        {files.prod && files.prod.length > 0 && <div className="mt-2 text-xs font-bold text-green-600 flex justify-center items-center gap-1"><CheckCircle size={12} /> Carregado</div>}
                         <div className="mt-2 text-[10px] text-orange-600 font-bold">Obrigatório</div>
                     </div>
 
