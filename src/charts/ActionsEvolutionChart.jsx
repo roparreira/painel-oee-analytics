@@ -7,7 +7,8 @@ const CHART_COLORS = {
     abertas: '#f97316',    // orange
     previstas: '#3b82f6',  // blue
     concluidas: '#22c55e', // green
-    acumulado: '#ef4444',  // red
+    acumuladoAtrasadas: '#ef4444', // red
+    acumuladoNoPrazo: '#eab308',   // yellow
 };
 
 const ActionsEvolutionChart = memo(({ data, title = "Evolução de Ações" }) => {
@@ -81,29 +82,58 @@ const ActionsEvolutionChart = memo(({ data, title = "Evolução de Ações" }) =
         });
 
         const sortedPeriods = [...allPeriods].sort();
-        let runningTotal = 0;
 
-        // Calcular total inicial
-        const firstPeriod = sortedPeriods[0];
-        data.forEach(d => {
-            const periodAbertura = getPeriodKey(d.OCORRENCIA);
-            const periodConcluida = getPeriodKey(d.DATA_STATUS_ACAO);
-            if (periodAbertura && periodAbertura < firstPeriod) runningTotal++;
-            if (periodConcluida && periodConcluida < firstPeriod) runningTotal--;
-        });
-
+        // Determinar range de datas para cálculo diário preciso do acumulado
         const maxPeriods = aggregation === 'day' ? 30 : aggregation === 'week' ? 20 : 12;
         const visiblePeriods = sortedPeriods.slice(-maxPeriods);
 
         return visiblePeriods.map(period => {
-            runningTotal += (abertas[period] || 0) - (concluidas[period] || 0);
+            // Data limite do período atual (fim do mês/semana/dia)
+            let periodEndDate;
+            const [year, part2, part3] = period.split('-');
+
+            if (aggregation === 'day') {
+                periodEndDate = new Date(year, parseInt(part2) - 1, parseInt(part3));
+            } else if (aggregation === 'month') {
+                periodEndDate = new Date(year, parseInt(part2), 0); // Último dia do mês
+            } else {
+                // Simplificação para outros períodos: usa o último dia do ano como fallback ou lógica específica se necessário
+                // Para week/quarter/semester/year, a lógica ideal exigiria parsing mais complexo.
+                // Como fallback seguro, usamos Data Atual se for o último período, ou fim do ano.
+                periodEndDate = new Date();
+            }
+            periodEndDate.setHours(23, 59, 59, 999);
+
+            let accAtrasadas = 0;
+            let accNoPrazo = 0;
+
+            // Calcular acumulado snapshot para este período
+            data.forEach(d => {
+                const dtOcorrencia = new Date(d.OCORRENCIA);
+                const dtConclusao = d.DATA_STATUS_ACAO ? new Date(d.DATA_STATUS_ACAO) : null;
+                const dtPrazo = new Date(d.PRAZO_EXTENDIDO || d.PRAZO);
+
+                // Ação existia no fim deste período?
+                // Criada antes ou durante o período E (não concluída OU concluída depois)
+                if (dtOcorrencia <= periodEndDate && (!dtConclusao || dtConclusao > periodEndDate)) {
+                    // Ação está em aberto neste ponto do tempo.
+                    // Verificamos se estava atrasada NAQUELA DATA (periodEndDate)
+                    if (dtPrazo < periodEndDate) {
+                        accAtrasadas++;
+                    } else {
+                        accNoPrazo++;
+                    }
+                }
+            });
+
             return {
                 period,
                 label: formatPeriodLabel(period, aggregation),
                 abertas: abertas[period] || 0,
                 previstas: previstas[period] || 0,
                 concluidas: concluidas[period] || 0,
-                acumulado: runningTotal,
+                acumuladoAtrasadas: accAtrasadas,
+                acumuladoNoPrazo: accNoPrazo,
             };
         });
     }, [data, aggregation]);
@@ -182,7 +212,8 @@ const ActionsEvolutionChart = memo(({ data, title = "Evolução de Ações" }) =
                                 abertas: 'Abertas',
                                 previstas: 'Previstas',
                                 concluidas: 'Concluídas',
-                                acumulado: 'Acumulado',
+                                acumuladoAtrasadas: 'Backlog Atrasado',
+                                acumuladoNoPrazo: 'Backlog No Prazo',
                             };
                             return [value, labels[name] || name];
                         }}
@@ -194,7 +225,8 @@ const ActionsEvolutionChart = memo(({ data, title = "Evolução de Ações" }) =
                                 abertas: 'Abertas',
                                 previstas: 'Previstas',
                                 concluidas: 'Concluídas',
-                                acumulado: 'Acumulado',
+                                acumuladoAtrasadas: 'Backlog Atrasado',
+                                acumuladoNoPrazo: 'Backlog No Prazo',
                             };
                             return labels[value] || value;
                         }}
@@ -226,11 +258,21 @@ const ActionsEvolutionChart = memo(({ data, title = "Evolução de Ações" }) =
                     <Line
                         yAxisId="right"
                         type="monotone"
-                        dataKey="acumulado"
-                        name="acumulado"
-                        stroke={CHART_COLORS.acumulado}
+                        dataKey="acumuladoAtrasadas"
+                        name="acumuladoAtrasadas"
+                        stroke={CHART_COLORS.acumuladoAtrasadas}
                         strokeWidth={3}
-                        dot={{ fill: CHART_COLORS.acumulado, r: 4 }}
+                        dot={{ fill: CHART_COLORS.acumuladoAtrasadas, r: 4 }}
+                        activeDot={{ r: 6 }}
+                    />
+                    <Line
+                        yAxisId="right"
+                        type="monotone"
+                        dataKey="acumuladoNoPrazo"
+                        name="acumuladoNoPrazo"
+                        stroke={CHART_COLORS.acumuladoNoPrazo}
+                        strokeWidth={3}
+                        dot={{ fill: CHART_COLORS.acumuladoNoPrazo, r: 4 }}
                         activeDot={{ r: 6 }}
                     />
                 </ComposedChart>

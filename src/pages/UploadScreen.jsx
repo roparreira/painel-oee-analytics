@@ -9,6 +9,29 @@ export default function UploadScreen({ onDataReady }) {
     const [loading, setLoading] = useState(false);
     const [errorLog, setErrorLog] = useState("");
 
+    const [autoLoaded, setAutoLoaded] = useState(false);
+
+    // Auto-load Despacho Bot Data
+    React.useEffect(() => {
+        fetch('/despacho_auto.xlsx')
+            .then(res => {
+                if (res.ok) return res.blob();
+                throw new Error('No auto-sync file');
+            })
+            .then(blob => {
+                const file = new File([blob], "despacho_auto.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+                setFiles(prev => {
+                    // Only update if not already set (or if we want to overwrite default)
+                    if (!prev.despacho) return { ...prev, despacho: file };
+                    return prev;
+                });
+                setAutoLoaded(true);
+            })
+            .catch(() => {
+                // Ignore 404
+            });
+    }, []);
+
     const handleProcess = async () => {
         if (!files.stop || !files.prod) return alert("Selecione os arquivos obrigatórios.");
         setLoading(true); setErrorLog("");
@@ -67,7 +90,7 @@ export default function UploadScreen({ onDataReady }) {
                         <div className="w-12 h-12 rounded-full bg-yellow-50 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform"><Truck style={{ color: COLORS.yellow }} /></div>
                         <p className="font-bold text-sm text-slate-700">Totalizador Despacho</p>
                         <p className="text-xs text-slate-400 mt-1">{files.despacho ? files.despacho.name : "Arraste ou clique"}</p>
-                        {files.despacho && <div className="mt-2 text-xs font-bold text-green-600 flex justify-center items-center gap-1"><CheckCircle size={12} /> Carregado</div>}
+                        {files.despacho && <div className="mt-2 text-xs font-bold text-green-600 flex justify-center items-center gap-1"><CheckCircle size={12} /> {autoLoaded ? "Sincronizado via Robô" : "Carregado"}</div>}
                         <div className="mt-2 text-[10px] text-slate-400 italic">Opcional (Pátio/Envio)</div>
                     </div>
                 </div>

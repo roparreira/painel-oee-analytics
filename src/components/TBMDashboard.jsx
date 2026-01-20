@@ -1,0 +1,399 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { Card } from './UI';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell } from 'recharts';
+import { Calendar, Users, Clock, AlertTriangle, FileText } from 'lucide-react';
+
+const COLORS = {
+    primary: '#f97316', // orange-500
+    secondary: '#3b82f6', // blue-500
+    success: '#22c55e', // green-500
+    warning: '#eab308', // yellow-500
+    danger: '#ef4444', // red-500
+    slate: '#64748b', // slate-500
+    orange: '#f97316',
+    blue: '#3b82f6',
+    green: '#22c55e',
+    red: '#ef4444',
+};
+
+const PIE_COLORS = ['#3b82f6', '#f97316', '#22c55e', '#ef4444', '#eab308', '#8b5cf6', '#ec4899', '#6366f1'];
+
+// Big Number Card - Local (similar to FailuresAnalysisDashboard)
+function BigNumberCard({ title, value, subtext, icon: Icon, color = 'orange', suffix = '' }) {
+    // Map string colors to hex if needed or use directly if they are valid css classes or vars
+    // But since we use style={{ color: color }}, they should be valid colors.
+    // The usages pass "blue", "orange", "red", "green", "slate".
+    // I will map them to the COLORS object constants if possible or leave as is if they match keys.
+    const resolvedColor = COLORS[color] || color;
+
+    return (
+        <Card className="p-3 flex flex-col justify-between h-full border-t-4" style={{ borderTopColor: resolvedColor }}>
+            <div>
+                <div className="flex justify-between items-start">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{title}</p>
+                    {Icon && <div className="p-1.5 rounded-full bg-slate-50"><Icon size={14} style={{ color: resolvedColor }} /></div>}
+                </div>
+                <div className="flex items-baseline gap-1 mt-1">
+                    <h3 className="text-2xl font-bold tracking-tight" style={{ color: resolvedColor }}>{value}</h3>
+                    {suffix && <span className="text-xs font-medium text-slate-400">{suffix}</span>}
+                </div>
+            </div>
+            {subtext && (
+                <div className="mt-2 pt-2 border-t border-slate-50">
+                    <p className="text-[10px] text-slate-400">{subtext}</p>
+                </div>
+            )}
+        </Card>
+    );
+}
+
+export default function TBMDashboard() {
+    const [data, setData] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [lastUpdated, setLastUpdated] = useState(null);
+    const [statusFilter, setStatusFilter] = useState(null); // 'on_time', 'overdue', or null
+
+    useEffect(() => {
+        fetch('./tbm_data.json')
+            .then(res => res.json())
+            .then(json => {
+                const rawData = json.data || [];
+                // Normalizar códigos de equipamento
+                const normalized = rawData.map(item => {
+                    const newItem = { ...item };
+                    if (newItem.LOCAL_MP && String(newItem.LOCAL_MP).toUpperCase() === '9621A') {
+                        newItem.LOCAL_MP = 'PCM A';
+                    }
+                    if (newItem.LOCAL_TAREFA && String(newItem.LOCAL_TAREFA).toUpperCase().includes('9621A')) {
+                        newItem.LOCAL_TAREFA = String(newItem.LOCAL_TAREFA).toUpperCase().replace('9621A', 'PCM A');
+                    }
+                    return newItem;
+                });
+                setData(normalized);
+                setLastUpdated(json.lastUpdated);
+                setLoading(false);
+            })
+            .catch(err => {
+                console.error("Erro ao carregar dados TBM:", err);
+                setLoading(false);
+            });
+    }, []);
+
+    // KPIs Calculation
+    const kpis = useMemo(() => {
+        if (!data.length) return { totalMPs: 0, totalHours: 0, overdue: 0, distinctPlans: 0 };
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        let totalHours = 0;
+        let overdueCount = 0;
+        const plans = new Set();
+        const mps = new Set();
+
+        data.forEach(item => {
+            mps.add(item.MP);
+            plans.add(item.PLANO);
+            // Convert TOTAL_HORAS likely string/number
+            const hours = parseFloat(item.TOTAL_HORAS) || 0;
+            totalHours += hours;
+
+            if (item.PROXIMO_VENCIMENTO) {
+                const dueDate = new Date(item.PROXIMO_VENCIMENTO);
+                if (dueDate < today) overdueCount++;
+            }
+        });
+
+        return {
+            totalMPs: mps.size,
+            totalHours: totalHours,
+            overdue: overdueCount,
+            distinctPlans: plans.size
+        };
+    }, [data]);
+
+    // Charts Data
+    const chartsData = useMemo(() => {
+        if (!data.length) return { byCrew: [], byCraft: [], byAsset: [], byStatus: [] };
+
+        // By Equipe (Total Hours)
+        const crewMap = {};
+        data.forEach(item => {
+            const crew = item.EQUIPE || 'Sem Equipe';
+            const hours = parseFloat(item.TOTAL_HORAS) || 0;
+            crewMap[crew] = (crewMap[crew] || 0) + hours;
+        });
+        const byCrew = Object.entries(crewMap)
+            .map(([name, value]) => ({ name, value }))
+            .sort((a, b) => b.value - a.value);
+
+        // By Mão de Obra (Hours)
+        const craftMap = {};
+        data.forEach(item => {
+            const craft = item.MAO_DE_OBRA || 'Outros';
+            const hours = parseFloat(item.TOTAL_HORAS) || 0;
+            craftMap[craft] = (craftMap[craft] || 0) + hours;
+        });
+        const byCraft = Object.entries(craftMap)
+            .map(([name, value]) => ({ name, value }))
+            .sort((a, b) => b.value - a.value);
+
+        // By Ativo (Quantidade de MPs)
+        const assetMap = {};
+        data.forEach(item => {
+            const asset = item.LOCAL_MP || 'Sem Local';
+            assetMap[asset] = (assetMap[asset] || 0) + 1;
+        });
+        const byAsset = Object.entries(assetMap)
+            .map(([name, value]) => ({ name, value }))
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 20); // Top 20
+
+        // By Status (On Time vs Overdue)
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        let onTimeCount = 0;
+        let overdueCount = 0;
+
+        data.forEach(item => {
+            const dueDate = item.PROXIMO_VENCIMENTO ? new Date(item.PROXIMO_VENCIMENTO) : null;
+            if (dueDate && dueDate < today) {
+                overdueCount++;
+            } else {
+                onTimeCount++;
+            }
+        });
+
+        const byStatus = [
+            { name: 'Em Dia', value: onTimeCount, key: 'on_time', color: COLORS.success },
+            { name: 'Atrasado', value: overdueCount, key: 'overdue', color: COLORS.danger }
+        ];
+
+        return { byCrew, byCraft, byAsset, byStatus };
+    }, [data]);
+
+    const filteredData = useMemo(() => {
+        if (!statusFilter) return data;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        return data.filter(item => {
+            const dueDate = item.PROXIMO_VENCIMENTO ? new Date(item.PROXIMO_VENCIMENTO) : null;
+            const isOverdue = dueDate && dueDate < today;
+            if (statusFilter === 'overdue') return isOverdue;
+            if (statusFilter === 'on_time') return !isOverdue;
+            return true;
+        });
+    }, [data, statusFilter]);
+
+    if (loading) return <div className="p-8 text-center text-slate-500">Carregando dados TBM...</div>;
+
+    return (
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50">
+            {/* Header */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                <div>
+                    <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                        <Clock className="text-orange-500" />
+                        Manutenção Baseada no Tempo (TBM)
+                    </h2>
+                    <p className="text-sm text-slate-500">
+                        Visão geral do plano de manutenção preventiva e rotinas periódicas.
+                        {lastUpdated && <span className="ml-2 text-xs bg-slate-100 px-2 py-0.5 rounded border border-slate-200">Atualizado em: {lastUpdated}</span>}
+                    </p>
+                </div>
+            </div>
+
+            {/* KPIs */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <BigNumberCard
+                    title="Total de MPs Ativas"
+                    value={kpis.totalMPs}
+                    icon={FileText}
+                    color="blue"
+                    subtext={`${kpis.distinctPlans} Planos de Trabalho distintos`}
+                />
+                <BigNumberCard
+                    title="Carga de Trabalho Estimada"
+                    value={kpis.totalHours.toFixed(1)}
+                    suffix=" h"
+                    icon={Clock}
+                    color="orange"
+                    subtext="Total de horas homem cadastradas"
+                />
+                <BigNumberCard
+                    title="MPs Vencidas"
+                    value={kpis.overdue}
+                    icon={AlertTriangle}
+                    color={kpis.overdue > 0 ? "red" : "green"}
+                    subtext="Data de Próx. Vencimento < Hoje"
+                />
+                <BigNumberCard
+                    title="Equipes Envolvidas"
+                    value={chartsData.byCrew.length}
+                    icon={Users}
+                    color="slate"
+                    subtext="Quantidade de equipes com MPs"
+                />
+            </div>
+
+            {/* Charts Row 1 */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <Card className="p-4 flex flex-col min-h-[350px]">
+                    <h3 className="text-slate-700 font-bold mb-4">Carga de Horas por Equipe</h3>
+                    <div className="flex-1 w-full min-h-0">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={chartsData.byCrew} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
+                                <XAxis type="number" hide />
+                                <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 11 }} interval={0} />
+                                <Tooltip
+                                    formatter={(value) => [`${value.toFixed(1)} h`, 'Horas Estimadas']}
+                                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                                />
+                                <Bar dataKey="value" fill={COLORS.primary} radius={[0, 4, 4, 0]} barSize={20}>
+                                    {chartsData.byCrew.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                                    ))}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </Card>
+
+                <Card className="p-4 flex flex-col min-h-[350px]">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-slate-700 font-bold">Status dos Planos (MP's)</h3>
+                        {statusFilter && (
+                            <button
+                                onClick={() => setStatusFilter(null)}
+                                className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-500 px-2 py-1 rounded transition-colors"
+                            >
+                                Limpar Filtro
+                            </button>
+                        )}
+                    </div>
+                    <div className="flex-1 w-full min-h-0">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart
+                                data={chartsData.byStatus}
+                                margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                                onClick={(state) => {
+                                    if (state && state.activePayload && state.activePayload.length > 0) {
+                                        const key = state.activePayload[0].payload.key;
+                                        setStatusFilter(prev => prev === key ? null : key);
+                                    }
+                                }}
+                            >
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                <XAxis dataKey="name" tick={{ fontSize: 12, fontWeight: 'bold' }} />
+                                <YAxis />
+                                <Tooltip
+                                    cursor={{ fill: 'transparent' }}
+                                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                                />
+                                <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={60} cursor="pointer">
+                                    {chartsData.byStatus.map((entry, index) => (
+                                        <Cell
+                                            key={`cell-${index}`}
+                                            fill={entry.color}
+                                            fillOpacity={statusFilter === null || statusFilter === entry.key ? 1 : 0.3}
+                                            stroke={statusFilter === entry.key ? '#000' : 'none'}
+                                            strokeWidth={2}
+                                        />
+                                    ))}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-2 text-center italic">Clique nas barras para filtrar a tabela</p>
+                </Card>
+            </div>
+
+            {/* Chart Row 2: Top Assets */}
+            <div className="mb-6">
+                <Card className="p-4 flex flex-col">
+                    <h3 className="text-slate-700 font-bold mb-4">Top 20 Ativos com mais MPs (Quantidade)</h3>
+                    <div className="w-full h-[400px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={chartsData.byAsset} margin={{ top: 10, right: 30, left: 10, bottom: 80 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                <XAxis
+                                    dataKey="name"
+                                    tick={{ fontSize: 10, fill: '#64748b' }}
+                                    interval={0}
+                                    angle={-45}
+                                    textAnchor="end"
+                                    height={60}
+                                />
+                                <YAxis tick={{ fontSize: 11, fill: '#64748b' }} />
+                                <Tooltip
+                                    formatter={(value) => [value, 'Quantidade de MPs']}
+                                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                                />
+                                <Bar dataKey="value" fill={COLORS.secondary} radius={[4, 4, 0, 0]} barSize={30} name="Quantidade de MPs" />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </Card>
+            </div>
+
+            {/* Data Table */}
+            <Card className="overflow-hidden flex flex-col" id="detalhamento-mp">
+                <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                        <h3 className="font-bold text-slate-700">Detalhamento de MPs</h3>
+                        {statusFilter && (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${statusFilter === 'overdue' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                                Filtro: {statusFilter === 'overdue' ? 'Atrasadas' : 'Em Dia'}
+                            </span>
+                        )}
+                    </div>
+                    <span className="text-xs text-slate-500">{filteredData.length} registros encontrados {statusFilter && `(filtrados de ${data.length})`}</span>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="min-w-full text-xs text-left">
+                        <thead className="bg-slate-100 font-bold text-slate-600">
+                            <tr>
+                                <th className="px-4 py-3">MP</th>
+                                <th className="px-4 py-3">Descrição da MP</th>
+                                <th className="px-4 py-3">Freq. (Dias)</th>
+                                <th className="px-4 py-3">Equipe</th>
+                                <th className="px-4 py-3">Plano</th>
+                                <th className="px-4 py-3">Tarefa</th>
+                                <th className="px-4 py-3">Descrição da Tarefa</th>
+                                <th className="px-4 py-3 text-right">Horas</th>
+                                <th className="px-4 py-3 text-right">Próx. Venc.</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {filteredData.slice(0, 100).map((row, idx) => {
+                                const isOverdue = row.PROXIMO_VENCIMENTO && new Date(row.PROXIMO_VENCIMENTO) < new Date();
+                                return (
+                                    <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                        <td className="px-4 py-2 font-medium text-slate-700 whitespace-nowrap">{row.MP}</td>
+                                        <td className="px-4 py-2 text-slate-600 max-w-[200px] truncate" title={row.DESCRICAO_MP}>{row.DESCRICAO_MP}</td>
+                                        <td className="px-4 py-2 text-center">{row.FREQUENCIA}</td>
+                                        <td className="px-4 py-2 text-slate-600">{row.EQUIPE}</td>
+                                        <td className="px-4 py-2 text-slate-600">{row.PLANO}</td>
+                                        <td className="px-4 py-2 text-center">{row.TAREFA_ID}</td>
+                                        <td className="px-4 py-2 text-slate-600 max-w-[250px] truncate" title={row.DESCRICAO_TAREFA}>{row.DESCRICAO_TAREFA}</td>
+                                        <td className="px-4 py-2 text-right font-mono">{parseFloat(row.TOTAL_HORAS).toFixed(1)}</td>
+                                        <td className={`px-4 py-2 text-right font-mono whitespace-nowrap ${isOverdue ? 'text-red-600 font-bold' : 'text-slate-600'}`}>
+                                            {row.PROXIMO_VENCIMENTO ? new Date(row.PROXIMO_VENCIMENTO).toLocaleDateString('pt-BR') : '-'}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                    {filteredData.length > 100 && (
+                        <div className="p-2 text-center text-xs text-slate-400 italic bg-slate-50 border-t border-slate-100">
+                            Mostrando os primeiros 100 registros de {filteredData.length}
+                        </div>
+                    )}
+                </div>
+            </Card>
+        </div>
+    );
+}

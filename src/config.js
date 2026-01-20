@@ -32,17 +32,28 @@ export const BUSINESS_CONSTANTS = {
 export const BUSINESS_CONSTANTS_PATIO = {
     // TEMPO (Horas)
     TC_META: 24,       // Tempo Calendário (24h por dia para Pátio)
-    SL_META: 6,        // Schedule Loss Meta
 
-    CO_META: 3,        // Corretiva Aceitável (h)
-    STP_META: 1,       // Setup/Limpeza Aceitável (h)
+    // PARADAS PROGRAMADAS (varia por dia da semana)
+    PPM_THURSDAY: 8,   // Quinta-feira: 8h (8h às 16h)
+    PPM_OTHER: 4,      // Outros dias: 4h (8h às 12h)
+    TTM: 1.5,          // Troca de Turno Meta: 1.5h por dia
+
+    // FRANQUIAS
+    PNPM: 3,           // Paradas Não Programadas Meta: 3h por dia
+    POM: 1,            // Perda Operacional Meta: 1h por dia
 
     // PRODUÇÃO FÍSICA / TAXA
-    VOL_META: 4188,    // Volume Meta (toneladas)
-    TX_META: 301,      // Taxa Meta (t/h)
+    VOL_META: 4188,    // Volume Meta (toneladas por dia)
+    TX_META: 301,      // Taxa Meta (t/h) - referência
+    TX_THEORY: 600,    // Taxa Teórica (t/h) - Capacidade Máxima
 
     // QUALIDADE (sempre 100% para Pátio/Envio)
-    QA_META: 100     // Yield (%)
+    QA_META: 100,      // Yield (%)
+
+    // Compatibilidade com código antigo
+    CO_META: 3,        // = PNPM
+    STP_META: 2,       // = POM
+    SL_META: 5.5       // Schedule Loss médio (usado apenas como fallback)
 };
 
 // --- CÁLCULO DE METAS (TARGETS) ---

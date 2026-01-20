@@ -9,9 +9,9 @@ const getStatusColor = (percentage) => {
 };
 
 export const Card = ({ children, className = "", style = {}, onClick = null }) => (
-  <div onClick={onClick} className={`bg-white rounded-xl shadow-[0_2px_10px_rgba(0,0,0,0.06)] border border-slate-100 flex flex-col ${className} ${onClick ? 'cursor-pointer transition-all duration-200' : ''}`} style={style}>
-    {children}
-  </div>
+    <div onClick={onClick} className={`bg-white rounded-xl shadow-[0_2px_10px_rgba(0,0,0,0.06)] border border-slate-100 flex flex-col ${className} ${onClick ? 'cursor-pointer transition-all duration-200' : ''}`} style={style}>
+        {children}
+    </div>
 );
 
 export const ComparisonCard = ({ title, real, target, unit = "h", inverse = false, showDeviationOnly = false }) => {
@@ -23,28 +23,28 @@ export const ComparisonCard = ({ title, real, target, unit = "h", inverse = fals
     const bgColor = isGood ? 'bg-green-50' : 'bg-red-50';
 
     return (
-        <Card className="p-2 flex flex-col gap-1 border-t-4 h-full justify-between" style={{borderTopColor: isGood ? COLORS.green : COLORS.red}}>
+        <Card className="p-2 flex flex-col gap-1 border-t-4 h-full justify-between" style={{ borderTopColor: isGood ? COLORS.green : COLORS.red }}>
             <h3 className="text-[10px] font-bold uppercase text-slate-500 flex items-center gap-1 leading-tight">
-                {isGood ? <CheckCircle size={12} className="text-green-500 shrink-0"/> : <AlertTriangle size={12} className="text-red-500 shrink-0"/>}
+                {isGood ? <CheckCircle size={12} className="text-green-500 shrink-0" /> : <AlertTriangle size={12} className="text-red-500 shrink-0" />}
                 {title}
             </h3>
             {!showDeviationOnly ? (
                 <div className="flex justify-between items-end mt-1">
                     <div>
-                        <span className="text-lg font-bold text-slate-700 block leading-none">{safeReal.toLocaleString('pt-BR', {maximumFractionDigits: 1})} <span className="text-[9px] font-normal text-slate-400">{unit}</span></span>
+                        <span className="text-lg font-bold text-slate-700 block leading-none">{safeReal.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} <span className="text-[9px] font-normal text-slate-400">{unit}</span></span>
                         <span className="text-[8px] text-slate-400 font-bold uppercase">Realizado</span>
                     </div>
                     <div className="text-right">
-                        <span className="text-xs font-bold text-slate-500 block leading-none">{safeTarget.toLocaleString('pt-BR', {maximumFractionDigits: 1})} <span className="text-[8px] font-normal text-slate-300">{unit}</span></span>
+                        <span className="text-xs font-bold text-slate-500 block leading-none">{safeTarget.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} <span className="text-[8px] font-normal text-slate-300">{unit}</span></span>
                         <span className="text-[8px] text-slate-400">Meta</span>
                     </div>
                 </div>
             ) : (
-                <div className="mt-1"><span className="text-[9px] text-slate-400 block mb-1">Meta: {safeTarget.toLocaleString('pt-BR', {maximumFractionDigits: 1})}</span></div>
+                <div className="mt-1"><span className="text-[9px] text-slate-400 block mb-1">Meta: {safeTarget.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</span></div>
             )}
             <div className={`mt-1 py-1 px-2 rounded ${bgColor} flex justify-between items-center`}>
                 <span className="text-[9px] font-bold text-slate-600">Desvio</span>
-                <span className={`text-xs font-bold ${diffColor}`}>{diff > 0 ? '+' : ''}{diff.toLocaleString('pt-BR', {maximumFractionDigits: 1})}</span>
+                <span className={`text-xs font-bold ${diffColor}`}>{diff > 0 ? '+' : ''}{diff.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}</span>
             </div>
         </Card>
     )
@@ -60,19 +60,19 @@ export const CheckCardDual = ({ title, sub, icon: Icon, valNorte, totalNorte, va
     const cardBorderColor = (pctNorte < 50 || pctSul < 50) ? COLORS.red : (pctNorte < 90 || pctSul < 90) ? COLORS.yellow : COLORS.green;
 
     return (
-        <Card className="p-3 flex flex-col gap-2 border-l-4 h-full justify-between" style={{borderLeftColor: cardBorderColor}}>
+        <Card className="p-3 flex flex-col gap-2 border-l-4 h-full justify-between" style={{ borderLeftColor: cardBorderColor }}>
             <div className="flex justify-between items-start">
                 <div><p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">{title}</p><p className="text-[8px] text-slate-400 leading-tight">{sub}</p></div>
-                <div className="p-1 rounded-full bg-slate-50"><Icon size={14} style={{color: cardBorderColor}} /></div>
+                <div className="p-1 rounded-full bg-slate-50"><Icon size={14} style={{ color: cardBorderColor }} /></div>
             </div>
             <div className="space-y-2">
                 <div>
                     <div className="flex justify-between text-[9px] mb-0.5"><span className="font-bold text-slate-600">Norte</span><span className="text-slate-500 font-medium">{pctNorte.toFixed(0)}% <span className="text-[8px] text-slate-400">({safeValNorte}/{safeTotalNorte})</span></span></div>
-                    <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{width: `${pctNorte}%`, backgroundColor: colorNorte}}></div></div>
+                    <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width: `${pctNorte}%`, backgroundColor: colorNorte }}></div></div>
                 </div>
                 <div>
                     <div className="flex justify-between text-[9px] mb-0.5"><span className="font-bold text-slate-600">Sul</span><span className="text-slate-500 font-medium">{pctSul.toFixed(0)}% <span className="text-[8px] text-slate-400">({safeValSul}/{safeTotalSul})</span></span></div>
-                    <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{width: `${pctSul}%`, backgroundColor: colorSul}}></div></div>
+                    <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width: `${pctSul}%`, backgroundColor: colorSul }}></div></div>
                 </div>
             </div>
         </Card>
@@ -82,19 +82,19 @@ export const CheckCardDual = ({ title, sub, icon: Icon, valNorte, totalNorte, va
 export const CheckCardSingle = ({ title, value, total, sub, icon: Icon }) => {
     const safeValue = Number(value) || 0;
     const safeTotal = Number(total) || 0;
-    const percentage = safeTotal > 0 ? (safeValue / safeTotal) * 100 : 0; 
+    const percentage = safeTotal > 0 ? (safeValue / safeTotal) * 100 : 0;
     const color = getStatusColor(percentage);
 
     return (
-        <Card className="p-3 flex flex-col gap-2 border-l-4 h-full justify-between" style={{borderLeftColor: color}}>
+        <Card className="p-3 flex flex-col gap-2 border-l-4 h-full justify-between" style={{ borderLeftColor: color }}>
             <div className="flex justify-between items-start">
                 <div>
                     <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">{title}</p>
                     <div className="flex items-baseline gap-1"><span className="text-xl font-bold text-slate-700">{percentage.toFixed(0)}%</span><span className="text-[10px] text-slate-400 font-medium">({safeValue}/{safeTotal})</span></div>
                 </div>
-                <div className="p-1 rounded-full bg-slate-50"><Icon size={14} style={{color}} /></div>
+                <div className="p-1 rounded-full bg-slate-50"><Icon size={14} style={{ color }} /></div>
             </div>
-            <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden mt-1"><div className="h-full rounded-full" style={{width: `${percentage}%`, backgroundColor: color}}></div></div>
+            <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden mt-1"><div className="h-full rounded-full" style={{ width: `${percentage}%`, backgroundColor: color }}></div></div>
             <p className="text-[8px] text-slate-400 mt-1 leading-tight">{sub}</p>
         </Card>
     );
@@ -103,10 +103,10 @@ export const CheckCardSingle = ({ title, value, total, sub, icon: Icon }) => {
 export const MiniDreRow = ({ label, value, target, unit = "h" }) => {
     const valNum = parseFloat(value);
     const targetNum = parseFloat(target);
-    const isGood = valNum <= targetNum; 
+    const isGood = valNum <= targetNum;
     const textColor = isGood ? 'text-green-600' : 'text-red-600';
     const dotColor = isGood ? 'bg-green-500' : 'bg-red-500';
-    
+
     return (
         <div className="flex justify-between items-center py-1.5 border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors px-1 rounded">
             <div className="flex items-center gap-1.5 overflow-hidden">
@@ -158,11 +158,11 @@ export const BigNumberCard = ({ title, valueNumeric, displayValue, unit, target,
             {!compact && (
                 <div className="mt-2 flex justify-between items-center text-[10px] border-t border-slate-50 pt-2">
                     <span className="text-gray-400">Meta: <strong className="text-slate-600">{target.toLocaleString('pt-BR')}</strong></span>
-                    <span className={`px-1.5 py-0.5 rounded font-bold ${valueNumeric >= target ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{adherenceVal.toLocaleString('pt-BR', {minimumFractionDigits: 1, maximumFractionDigits: 1})}%</span>
+                    <span className={`px-1.5 py-0.5 rounded font-bold ${valueNumeric >= target ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{adherenceVal.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</span>
                 </div>
             )}
             {compact && target !== 0 && (
-                 <div className="mt-1 flex items-center gap-2 text-[10px]"><span className="text-gray-400">Meta: {target.toLocaleString('pt-BR')}</span></div>
+                <div className="mt-1 flex items-center gap-2 text-[10px]"><span className="text-gray-400">Meta: {target.toLocaleString('pt-BR')}</span></div>
             )}
         </div>
     );
@@ -175,14 +175,14 @@ export const PillarCard = ({ title, value, target, icon: Icon, className = "" })
     const dynamicColor = isOk ? COLORS.green : COLORS.red;
 
     return (
-        <div className={`bg-white rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-slate-100 flex flex-col justify-between p-2 h-full border-t-4 ${className}`} style={{ borderTopColor: dynamicColor }}>
-            <h3 className="text-[10px] font-bold uppercase text-slate-500 text-center mb-0 truncate px-1">{title}</h3>
-            <div className="flex-1 flex items-center justify-center">
-                <span className="text-xl font-bold" style={{ color: dynamicColor }}>{value}%</span>
+        <div className={`bg-white rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-slate-100 flex flex-col justify-between p-1.5 h-full border-t-4 ${className}`} style={{ borderTopColor: dynamicColor }}>
+            <h3 className="text-[10px] font-bold uppercase text-slate-500 text-center mb-0 truncate px-1 shrink-0">{title}</h3>
+            <div className="flex-1 flex items-center justify-center min-h-0">
+                <span className="text-lg md:text-xl font-bold leading-none" style={{ color: dynamicColor }}>{value}%</span>
             </div>
-            <div className="border-t border-slate-50 pt-1 mt-0.5 flex justify-between items-center w-full text-[9px] text-slate-400">
+            <div className="border-t border-slate-50 pt-0.5 mt-0 flex justify-between items-center w-full text-[9px] text-slate-400 shrink-0">
                 <span className="flex-1 truncate mr-1 text-left min-w-0" title={`Meta: ${target}%`}>Meta: {target}%</span>
-                <div className="flex items-center gap-1 shrink-0">{Icon && <Icon size={10} style={{ color: dynamicColor }} className="opacity-70"/>}<span style={{ color: dynamicColor }} className="text-[10px] font-bold">{isOk ? '▲' : '▼'}</span></div>
+                <div className="flex items-center gap-1 shrink-0">{Icon && <Icon size={10} style={{ color: dynamicColor }} className="opacity-70" />}<span style={{ color: dynamicColor }} className="text-[10px] font-bold">{isOk ? '▲' : '▼'}</span></div>
             </div>
         </div>
     );

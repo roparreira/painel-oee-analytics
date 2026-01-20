@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Filter, X, ChevronDown, TrendingDown, Timer, Wrench, Layers, Crosshair, PlayCircle, StopCircle, Percent, Maximize, CalendarX, AlertTriangle, CheckCircle, Clock, LineChart, ScatterChart, LifeBuoy } from 'lucide-react';
+import { Filter, X, ChevronDown, TrendingDown, Timer, Wrench, Layers, Crosshair, PlayCircle, StopCircle, Percent, Maximize, CalendarX, AlertTriangle, CheckCircle, Clock, LineChart, ScatterChart, LifeBuoy, Info } from 'lucide-react';
 import { COLORS, TARGETS, TARGETS_PATIO, BUSINESS_CONSTANTS, BUSINESS_CONSTANTS_PATIO } from '../config';
 import { Card, ComparisonCard, CheckCardDual, CheckCardSingle, MiniDreRow, BigNumberCard, PillarCard } from './UI';
 import CustomJackKnifeChart from '../charts/JackKnifeChart';
@@ -10,8 +10,11 @@ import BridgeChart from '../charts/BridgeChart';
 import LossEvolutionChart from '../charts/LossEvolutionChart';
 import ReliabilityTrendChart from '../charts/ReliabilityTrendChart';
 import WeibullChart from '../charts/WeibullChart';
-import { calculateOEEData, calculateDashboardAggregates, calculateTreeStats, calculateJackKnifeData, calculateParetoData, calculateReliabilityTrend, calculateWeibullData } from '../services/etl';
+import WindowHoursChart from '../charts/WindowHoursChart';
+import { calculateOEEData, calculateDashboardAggregates, calculateTreeStats, calculateJackKnifeData, calculateParetoData, calculateReliabilityTrend, calculateWeibullData, calculateWindowHoursData } from '../services/etl';
 import { formatDateISO } from '../utils';
+import BridgeChartExplanation from './BridgeChartExplanation';
+import OEEExplanation from './OEEExplanation';
 
 export default function OEEDashboardContent({ rawData, initialDateRange, areaMode, setAreaMode, activeTab = 'overview', setActiveTab }) {
     // activeTab is now received from props (controlled by Sidebar)
@@ -24,6 +27,8 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
     const [lossFilter, setLossFilter] = useState(null);
     const [equipmentFilter, setEquipmentFilter] = useState(null);
     const [selectedEquipJackKnife, setSelectedEquipJackKnife] = useState(null);
+    const [showBridgeExplainer, setShowBridgeExplainer] = useState(false);
+    const [showOEEExplainer, setShowOEEExplainer] = useState(false);
 
     const [calculatedData, setCalculatedData] = useState([]);
 
@@ -108,6 +113,11 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
         return calculateWeibullData(activeRawData, weibullEquipmentFilter);
     }, [activeRawData, weibullEquipmentFilter]);
 
+    const windowHoursData = useMemo(() => {
+        return calculateWindowHoursData(activeRawData, validatedDateRange, aggregation);
+    }, [activeRawData, validatedDateRange, aggregation]);
+
+
 
     const handleBarToggle = (key) => setFilterSelection(prev => prev === key ? null : key);
     const handleChartDrillDown = (key, type) => {
@@ -166,7 +176,7 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                     {activeTab === 'tree' && (
                         <>
                             <button onClick={() => setTreeSubTab('tree_main')} className={`px-3 md:px-4 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${treeSubTab === 'tree_main' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Árvore OEE</button>
-                            <button onClick={() => setTreeSubTab('detailed')} className={`px-3 md:px-4 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${treeSubTab === 'detailed' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>OEE Detalhado</button>
+                            <button onClick={() => setTreeSubTab('janela')} className={`px-3 md:px-4 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${treeSubTab === 'janela' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Janela</button>
                             <button onClick={() => setTreeSubTab('verification')} className={`px-3 md:px-4 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${treeSubTab === 'verification' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Verificação</button>
                         </>
                     )}
@@ -253,9 +263,22 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                             {/* Título adicionado */}
                             <PillarCard title="QUALIDADE" value={activeAggregates.qual} target={activeTargets.QUAL} icon={CheckCircle} className="flex-1 min-h-0" />
                         </div>
-                        <Card className="col-span-1 md:col-span-2 2xl:col-span-5 2xl:row-span-2 p-4 min-h-[280px] 2xl:min-h-0">
-                            <div className="flex justify-between items-center mb-2"><h3 className="text-sm font-bold uppercase flex items-center gap-2 text-slate-600"><TrendingDown size={16} /> BRIDGE DE PERDAS ({areaMode === 'patio' ? 'VOLUME' : 'FORNOS'})</h3><span className="text-xs bg-slate-100 text-slate-500 px-2 py-1 rounded font-medium">Meta → Realizado</span></div>
+                        <Card className="col-span-1 md:col-span-2 2xl:col-span-5 2xl:row-span-2 p-4 min-h-[280px] 2xl:min-h-0 relative">
+                            <div className="flex justify-between items-center mb-2">
+                                <h3 className="text-sm font-bold uppercase flex items-center gap-2 text-slate-600"><TrendingDown size={16} /> BRIDGE DE PERDAS ({areaMode === 'patio' ? 'VOLUME' : 'FORNOS'})</h3>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs bg-slate-100 text-slate-500 px-2 py-1 rounded font-medium">Meta → Realizado</span>
+                                    <button
+                                        onClick={() => setShowBridgeExplainer(true)}
+                                        className="text-slate-400 hover:text-blue-500 transition-colors p-1"
+                                        title="Ver detalhes do cálculo"
+                                    >
+                                        <Info size={16} />
+                                    </button>
+                                </div>
+                            </div>
                             <div className="flex-1 min-h-0"><BridgeChart aggregates={activeAggregates} areaMode={areaMode} /></div>
+
                         </Card>
                         <div className="col-span-1 md:col-span-2 2xl:col-span-3 2xl:row-span-2 flex flex-col gap-2 min-h-[200px] 2xl:min-h-0">
                             {areaMode === 'patio' ? (
@@ -297,16 +320,166 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                             <div className="col-span-1 2xl:col-span-2 h-24"><ComparisonCard title="Fornos Produzidos" target={activeAggregates.targetOvens} real={activeAggregates.ovensNumeric} unit="un" inverse={false} /></div>
                             <div className="col-span-1 2xl:col-span-2 h-24"><ComparisonCard title="Troca de Turno" target={activeAggregates.targetShiftChange} real={activeAggregates.shiftLossMins / 60} inverse={true} showDeviationOnly={true} /></div>
                             <div className="col-span-1 2xl:col-span-2 h-24"><ComparisonCard title="Perda Operacional" target={0} real={(activeAggregates.opsLossMins) / 60} inverse={true} /></div>
-                            <div className="col-span-1 md:col-span-2 2xl:col-span-6 mt-3 mb-1 flex items-center gap-2 flex-wrap"><div className="h-px bg-slate-300 flex-1 hidden md:block"></div><span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider w-full md:w-auto text-center">Checklist de Janela (Aderência)</span><div className="flex gap-3 ml-2 text-[9px] font-medium border-l pl-2 border-slate-300 text-slate-400 justify-center w-full md:w-auto"><div className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-red-500"></div> &lt; 50%</div><div className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-yellow-500"></div> 50-90%</div><div className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-green-500"></div> &gt; 90%</div></div><div className="h-px bg-slate-300 flex-1 hidden md:block"></div></div>
-                            <div className="col-span-1 h-32"><CheckCardDual title="Pontualidade Início" valNorte={activeAggregates.winStartOkNorte} totalNorte={activeAggregates.daysWithStopNorte} valSul={activeAggregates.winStartOkSul} totalSul={activeAggregates.daysWithStopSul} sub="Início 08:00 ±15m" icon={PlayCircle} /></div>
-                            <div className="col-span-1 h-32"><CheckCardDual title="Pontualidade Fim" valNorte={activeAggregates.winEndOkNorte} totalNorte={activeAggregates.daysWithStopNorte} valSul={activeAggregates.winEndOkSul} totalSul={activeAggregates.daysWithStopSul} sub="Término 13:00 ±15m" icon={StopCircle} /></div>
-                            <div className="col-span-1 h-32"><CheckCardDual title="Dentro Horário" valNorte={activeAggregates.winInsideOkNorte} totalNorte={activeAggregates.daysWithStopNorte} valSul={activeAggregates.winInsideOkSul} totalSul={activeAggregates.daysWithStopSul} sub="Entre 08h-17h" icon={Maximize} /></div>
-                            <div className="col-span-1 h-32"><Card className="p-3 flex flex-col gap-2 border-l-4 h-full justify-between" style={{ borderLeftColor: getLocalStatusColor(Math.min(activeAggregates.windowAvgDurNorte, activeAggregates.windowAvgDurSul)) }}><div><p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Duração</p><div className="flex gap-2"><div><span className="text-lg font-bold text-slate-700 block" style={{ color: getLocalStatusColor(activeAggregates.windowAvgDurNorte) }}>{activeAggregates.windowAvgDurNorte}%</span><span className="text-[8px] text-slate-400">Norte</span></div><div className="w-px bg-slate-200"></div><div><span className="text-lg font-bold text-slate-700 block" style={{ color: getLocalStatusColor(activeAggregates.windowAvgDurSul) }}>{activeAggregates.windowAvgDurSul}%</span><span className="text-[8px] text-slate-400">Sul</span></div></div></div><p className="text-[8px] text-slate-400 mt-1">Meta 5h/quench</p></Card></div>
-                            <div className="col-span-1 h-32"><CheckCardSingle title="Score Freq." value={activeAggregates.windowFreqScore} total={100} sub="Quenchs Parados" icon={Percent} /></div>
-                            <div className="col-span-1 h-32"><CheckCardDual title="Dias Sem Parada" valNorte={activeAggregates.daysWithoutStopNorte} totalNorte={activeAggregates.windowTotalDays} valSul={activeAggregates.daysWithoutStopSul} totalSul={activeAggregates.windowTotalDays} sub="Sem registro" icon={CalendarX} /></div>
                         </div>
                     </div>
                 )}
+
+                {/* ABA JANELA: Checklist de Janela (Aderência) + Gráfico de Barras */}
+                {activeTab === 'tree' && treeSubTab === 'janela' && (
+                    <div className="h-full overflow-hidden flex flex-col pb-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-6 gap-2 content-start">
+                            {/* Título da seção */}
+                            <div className="col-span-1 md:col-span-2 2xl:col-span-6 mb-1 flex items-center gap-2 mt-2 flex-wrap"><div className="h-px bg-slate-300 flex-1 hidden md:block"></div><span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider w-full md:w-auto text-center">Checklist de Janela (Aderência)</span><div className="flex gap-3 ml-2 text-[9px] font-medium border-l pl-2 border-slate-300 text-slate-400 justify-center w-full md:w-auto"><div className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-red-500"></div> &lt; 50%</div><div className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-yellow-500"></div> 50-90%</div><div className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-green-500"></div> &gt; 90%</div></div><div className="h-px bg-slate-300 flex-1 hidden md:block"></div></div>
+
+                            {/* Cards do checklist */}
+                            {areaMode === 'maquinas' ? (
+                                <>
+                                    {/* MÁQUINAS: Janelas Simultâneas 5h - Primeiro Card */}
+                                    <div className="col-span-1 h-32">
+                                        <Card className="p-3 flex flex-col justify-between h-full border-l-4 shadow-sm hover:shadow-md transition-shadow" style={{ borderLeftColor: '#8B5CF6' }}>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <div className="p-1 rounded-full bg-purple-50 text-purple-500"><AlertTriangle size={12} /></div>
+                                                <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 truncate">Simultâneas 5h+</p>
+                                            </div>
+                                            <div className="flex items-center justify-center flex-1">
+                                                <span className="text-4xl font-black text-purple-600">{activeAggregates.countSimultaneous5h || 0}</span>
+                                            </div>
+                                            <p className="text-[8px] text-slate-400 text-center">Dias com ambos ≥5h</p>
+                                        </Card>
+                                    </div>
+
+                                    {/* MÁQUINAS: Janelas Realizadas (5h) */}
+                                    <div className="col-span-1 h-32">
+                                        <Card className="p-3 flex flex-col justify-between h-full border-l-4 shadow-sm hover:shadow-md transition-shadow" style={{ borderLeftColor: COLORS.blue }}>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <div className="p-1 rounded-full bg-blue-50 text-blue-500"><CheckCircle size={12} /></div>
+                                                <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 truncate">Janelas Realizadas (5h)</p>
+                                            </div>
+                                            <div className="flex gap-3 mb-1">
+                                                <div>
+                                                    <span className="text-xl font-bold text-slate-700 block leading-none">{activeAggregates.count5hNorte || 0}</span>
+                                                    <span className="text-[8px] text-slate-400 font-bold uppercase">Norte</span>
+                                                </div>
+                                                <div className="w-px bg-slate-200"></div>
+                                                <div>
+                                                    <span className="text-xl font-bold text-slate-700 block leading-none">{activeAggregates.count5hSul || 0}</span>
+                                                    <span className="text-[8px] text-slate-400 font-bold uppercase">Sul</span>
+                                                </div>
+                                            </div>
+                                            <div className="bg-slate-50 rounded p-1.5 border border-slate-100">
+                                                <div className="flex justify-between text-[9px] text-slate-500 mb-0.5"><span>Simultâneas:</span> <strong className="text-slate-700">{activeAggregates.countSimultaneous || 0}</strong></div>
+                                                <div className="flex justify-between text-[9px] text-slate-500"><span>Simult. 5h:</span> <strong className="text-blue-600">{activeAggregates.countSimultaneous5h || 0}</strong></div>
+                                            </div>
+                                        </Card>
+                                    </div>
+                                    {/* MÁQUINAS: Dias Com Parada */}
+                                    <div className="col-span-1 h-32"><CheckCardDual title="Dias Com Parada" valNorte={activeAggregates.daysWithStopNorte} totalNorte={activeAggregates.windowTotalDays} valSul={activeAggregates.daysWithStopSul} totalSul={activeAggregates.windowTotalDays} sub="Com registro" icon={CalendarX} /></div>
+                                    {/* MÁQUINAS: Dentro Horário */}
+                                    <div className="col-span-1 h-32"><CheckCardDual title="Dentro Horário" valNorte={activeAggregates.winInsideOkNorte} totalNorte={activeAggregates.daysWithStopNorte} valSul={activeAggregates.winInsideOkSul} totalSul={activeAggregates.daysWithStopSul} sub="Entre 08h-17h" icon={Maximize} /></div>
+                                    {/* MÁQUINAS: Pontualidade Início */}
+                                    <div className="col-span-1 h-32"><CheckCardDual title="Pontualidade Início" valNorte={activeAggregates.winStartOkNorte} totalNorte={activeAggregates.daysWithStopNorte} valSul={activeAggregates.winStartOkSul} totalSul={activeAggregates.daysWithStopSul} sub="Início 08:00 ±15m" icon={PlayCircle} /></div>
+                                    {/* MÁQUINAS: Pontualidade Fim */}
+                                    <div className="col-span-1 h-32"><CheckCardDual title="Pontualidade Fim" valNorte={activeAggregates.winEndOkNorte} totalNorte={activeAggregates.daysWithStopNorte} valSul={activeAggregates.winEndOkSul} totalSul={activeAggregates.daysWithStopSul} sub="Término 13:00 ±15m" icon={StopCircle} /></div>
+                                </>
+                            ) : (
+                                <>
+                                    {/* PÁTIO: Dias Com Parada (Quintas vs Outros) */}
+                                    <div className="col-span-1 h-32">
+                                        <Card className="p-3 flex flex-col justify-between h-full border-l-4 shadow-sm hover:shadow-md transition-shadow" style={{ borderLeftColor: COLORS.blue }}>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <div className="p-1 rounded-full bg-blue-50 text-blue-500"><CalendarX size={12} /></div>
+                                                <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 truncate">Dias Com Parada</p>
+                                            </div>
+                                            <div className="flex gap-3 mb-1">
+                                                <div>
+                                                    <span className="text-xl font-bold text-slate-700 block leading-none">{activeAggregates.patioDaysWithStopThursday || 0}</span>
+                                                    <span className="text-[8px] text-slate-400 font-bold uppercase">Quintas</span>
+                                                </div>
+                                                <div className="w-px bg-slate-200"></div>
+                                                <div>
+                                                    <span className="text-xl font-bold text-slate-700 block leading-none">{activeAggregates.patioDaysWithStopOther || 0}</span>
+                                                    <span className="text-[8px] text-slate-400 font-bold uppercase">Outros</span>
+                                                </div>
+                                            </div>
+                                            <div className="bg-slate-50 rounded p-1.5 border border-slate-100">
+                                                <div className="flex justify-between text-[9px] text-slate-500"><span>Total:</span> <strong className="text-slate-700">{activeAggregates.patioDaysWithStop || 0} / {activeAggregates.windowTotalDays || 0}</strong></div>
+                                            </div>
+                                        </Card>
+                                    </div>
+                                    {/* PÁTIO: Dentro do Horário */}
+                                    <div className="col-span-1 h-32">
+                                        <Card className="p-3 flex flex-col justify-between h-full border-l-4 shadow-sm hover:shadow-md transition-shadow" style={{ borderLeftColor: COLORS.green }}>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <div className="p-1 rounded-full bg-green-50 text-green-500"><Maximize size={12} /></div>
+                                                <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 truncate">Dentro Horário</p>
+                                            </div>
+                                            <div className="flex gap-3 mb-1">
+                                                <div>
+                                                    <span className="text-xl font-bold text-slate-700 block leading-none">{activeAggregates.patioInsideOkThursday || 0}</span>
+                                                    <span className="text-[8px] text-slate-400 font-bold uppercase">Quintas</span>
+                                                </div>
+                                                <div className="w-px bg-slate-200"></div>
+                                                <div>
+                                                    <span className="text-xl font-bold text-slate-700 block leading-none">{activeAggregates.patioInsideOkOther || 0}</span>
+                                                    <span className="text-[8px] text-slate-400 font-bold uppercase">Outros</span>
+                                                </div>
+                                            </div>
+                                            <p className="text-[8px] text-slate-400 text-center">Qui: 08h-16h | Outros: 08h-12h</p>
+                                        </Card>
+                                    </div>
+                                    {/* PÁTIO: Pontualidade Início */}
+                                    <div className="col-span-1 h-32">
+                                        <Card className="p-3 flex flex-col justify-between h-full border-l-4 shadow-sm hover:shadow-md transition-shadow" style={{ borderLeftColor: COLORS.yellow }}>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <div className="p-1 rounded-full bg-yellow-50 text-yellow-600"><PlayCircle size={12} /></div>
+                                                <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 truncate">Pontualidade Início</p>
+                                            </div>
+                                            <div className="flex gap-3 mb-1">
+                                                <div>
+                                                    <span className="text-xl font-bold text-slate-700 block leading-none">{activeAggregates.patioStartOkThursday || 0}</span>
+                                                    <span className="text-[8px] text-slate-400 font-bold uppercase">Quintas</span>
+                                                </div>
+                                                <div className="w-px bg-slate-200"></div>
+                                                <div>
+                                                    <span className="text-xl font-bold text-slate-700 block leading-none">{activeAggregates.patioStartOkOther || 0}</span>
+                                                    <span className="text-[8px] text-slate-400 font-bold uppercase">Outros</span>
+                                                </div>
+                                            </div>
+                                            <p className="text-[8px] text-slate-400 text-center">Início 08:00 ±15min</p>
+                                        </Card>
+                                    </div>
+                                    {/* PÁTIO: Pontualidade Fim */}
+                                    <div className="col-span-1 h-32">
+                                        <Card className="p-3 flex flex-col justify-between h-full border-l-4 shadow-sm hover:shadow-md transition-shadow" style={{ borderLeftColor: COLORS.red }}>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <div className="p-1 rounded-full bg-red-50 text-red-500"><StopCircle size={12} /></div>
+                                                <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500 truncate">Pontualidade Fim</p>
+                                            </div>
+                                            <div className="flex gap-3 mb-1">
+                                                <div>
+                                                    <span className="text-xl font-bold text-slate-700 block leading-none">{activeAggregates.patioEndOkThursday || 0}</span>
+                                                    <span className="text-[8px] text-slate-400 font-bold uppercase">Quintas</span>
+                                                </div>
+                                                <div className="w-px bg-slate-200"></div>
+                                                <div>
+                                                    <span className="text-xl font-bold text-slate-700 block leading-none">{activeAggregates.patioEndOkOther || 0}</span>
+                                                    <span className="text-[8px] text-slate-400 font-bold uppercase">Outros</span>
+                                                </div>
+                                            </div>
+                                            <p className="text-[8px] text-slate-400 text-center">Qui: 16:00 | Outros: 12:00 ±15min</p>
+                                        </Card>
+                                    </div>
+                                </>
+                            )}
+
+                            {/* Gráfico de Barras - Horas de Janela por Período */}
+                            <div className="col-span-1 md:col-span-2 2xl:col-span-6 mt-4 h-80">
+                                <WindowHoursChart data={windowHoursData} title={areaMode === 'maquinas' ? "Horas de Janela por Período (Norte x Sul)" : "Horas de Parada Programada por Período"} />
+                            </div>
+                        </div>
+                    </div>
+                )}
+
 
                 {/* ABA 3: ÁRVORE OEE */}
                 {activeTab === 'tree' && treeSubTab === 'tree_main' && treeStats && (
@@ -315,18 +488,38 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                             <div className="p-3 bg-orange-50 border border-orange-100 rounded-xl shadow-sm w-48">
                                 <h4 className="text-[10px] font-bold text-orange-800 mb-2 uppercase tracking-wide">Resultado da Produção</h4>
                                 <div className="flex flex-col gap-2">
-                                    <div><span className="block text-orange-400 text-[9px] uppercase font-bold">Fornos</span><span className="text-xl font-bold text-slate-700">{activeAggregates.ovensDisplay}</span></div>
-                                    <div className="h-px bg-orange-200 w-full"></div>
-                                    <div><span className="block text-orange-400 text-[9px] uppercase font-bold">Ritmo Médio</span><span className="text-xl font-bold text-slate-700">{activeAggregates.ritmoDisplay} <span className="text-[9px] font-normal text-slate-400">min/u</span></span></div>
+                                    {areaMode === 'maquinas' ? (
+                                        <>
+                                            <div><span className="block text-orange-400 text-[9px] uppercase font-bold">Fornos</span><span className="text-xl font-bold text-slate-700">{activeAggregates.ovensDisplay}</span></div>
+                                            <div className="h-px bg-orange-200 w-full"></div>
+                                            <div><span className="block text-orange-400 text-[9px] uppercase font-bold">Ritmo Médio</span><span className="text-xl font-bold text-slate-700">{activeAggregates.ritmoDisplay} <span className="text-[9px] font-normal text-slate-400">min/u</span></span></div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div><span className="block text-orange-400 text-[9px] uppercase font-bold">Volume</span><span className="text-xl font-bold text-slate-700">{activeAggregates.totalWetCharge?.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) || 0} <span className="text-[9px] font-normal text-slate-400">t</span></span></div>
+                                            <div className="h-px bg-orange-200 w-full"></div>
+                                            <div><span className="block text-orange-400 text-[9px] uppercase font-bold">Taxa Média</span><span className="text-xl font-bold text-slate-700">{activeAggregates.patioBridgeReal?.TLIQR?.toFixed(1) || 0} <span className="text-[9px] font-normal text-slate-400">t/h</span></span></div>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         </div>
                         <div className="2xl:hidden mb-4 p-3 bg-orange-50 border border-orange-100 rounded-xl shadow-sm">
                             <h4 className="text-[10px] font-bold text-orange-800 mb-2 uppercase tracking-wide">Resultado da Produção</h4>
                             <div className="flex justify-between">
-                                <div><span className="block text-orange-400 text-[9px] uppercase font-bold">Fornos</span><span className="text-xl font-bold text-slate-700">{activeAggregates.ovensDisplay}</span></div>
-                                <div className="w-px bg-orange-200"></div>
-                                <div><span className="block text-orange-400 text-[9px] uppercase font-bold">Ritmo Médio</span><span className="text-xl font-bold text-slate-700">{activeAggregates.ritmoDisplay} <span className="text-[9px] font-normal text-slate-400">min/u</span></span></div>
+                                {areaMode === 'maquinas' ? (
+                                    <>
+                                        <div><span className="block text-orange-400 text-[9px] uppercase font-bold">Fornos</span><span className="text-xl font-bold text-slate-700">{activeAggregates.ovensDisplay}</span></div>
+                                        <div className="w-px bg-orange-200"></div>
+                                        <div><span className="block text-orange-400 text-[9px] uppercase font-bold">Ritmo Médio</span><span className="text-xl font-bold text-slate-700">{activeAggregates.ritmoDisplay} <span className="text-[9px] font-normal text-slate-400">min/u</span></span></div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div><span className="block text-orange-400 text-[9px] uppercase font-bold">Volume</span><span className="text-xl font-bold text-slate-700">{activeAggregates.totalWetCharge?.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) || 0} <span className="text-[9px] font-normal text-slate-400">t</span></span></div>
+                                        <div className="w-px bg-orange-200"></div>
+                                        <div><span className="block text-orange-400 text-[9px] uppercase font-bold">Taxa Média</span><span className="text-xl font-bold text-slate-700">{activeAggregates.patioBridgeReal?.TLIQR?.toFixed(1) || 0} <span className="text-[9px] font-normal text-slate-400">t/h</span></span></div>
+                                    </>
+                                )}
                             </div>
                         </div>
                         <div className="flex flex-col items-center pt-2 2xl:pt-8 w-full max-w-5xl mx-auto">
@@ -336,7 +529,14 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                                 return (
                                     <>
                                         <div className="flex flex-col items-center mb-8 relative z-10 w-full max-w-4xl">
-                                            <Card className="w-full md:w-64 p-4 border-t-4 text-center shadow-lg" style={{ borderTopColor: colorOee }}>
+                                            <Card className="w-full md:w-64 p-4 border-t-4 text-center shadow-lg relative" style={{ borderTopColor: colorOee }}>
+                                                <button
+                                                    onClick={() => setShowOEEExplainer(true)}
+                                                    className="absolute top-2 right-2 text-slate-400 hover:text-blue-500 transition-colors p-1"
+                                                    title="Ver detalhes do cálculo OEE"
+                                                >
+                                                    <Info size={14} />
+                                                </button>
                                                 <h3 className="font-bold text-slate-500 uppercase text-xs mb-1">OEE Global</h3>
                                                 <span className="text-4xl font-bold block" style={{ color: colorOee }}>{activeAggregates.oee}%</span>
                                                 <div className="mt-2 pt-2 border-t border-slate-100 text-xs text-slate-400 flex justify-between"><span>Meta: {activeTargets.OEE}%</span><span style={{ color: colorOee }}>{oeeVal >= activeTargets.OEE ? '▲' : '▼'}</span></div>
@@ -346,38 +546,61 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                                         <div className="flex flex-col 2xl:flex-row justify-between w-full max-w-5xl px-0 md:px-4 mb-8 relative z-10 gap-8 2xl:gap-4">
                                             <div className="flex flex-col items-center relative w-full">
                                                 <div className="h-4 w-px bg-slate-300 absolute -top-8 hidden 2xl:block"></div>
-                                                <PillarCard title="DISPONIBILIDADE" value={activeAggregates.avail} target={activeTargets.AVAIL} icon={AlertTriangle} className="w-full 2xl:w-64 mb-4 shadow-md hover:shadow-lg transition-all" />
-                                                <div className="h-6 w-px bg-slate-300 mb-2 hidden 2xl:block"></div>
-                                                <div className="bg-white border border-slate-200 rounded-lg p-2 text-left w-full 2xl:w-64 text-xs shadow-sm space-y-1">
-                                                    <div className="flex justify-between items-center text-slate-500 border-b border-slate-100 pb-1 mb-1 font-bold"><span>Detalhamento de Perdas</span></div>
-                                                    <MiniDreRow label="Falha Equip." value={treeStats.failLoss.val} target={treeStats.failLoss.target} />
-                                                    <MiniDreRow label="Prog. Excedente" value={treeStats.schedMaintLoss.val} target={treeStats.schedMaintLoss.target} />
-                                                    <div className="flex justify-between items-center border-t-2 border-slate-100 pt-2 mt-1"><span className="font-bold text-slate-700">T. Operando</span><span className="font-bold text-slate-700 bg-slate-100 px-1.5 rounded">{treeStats.operating} h</span></div>
-                                                </div>
+                                                <PillarCard title="DISPONIBILIDADE" value={activeAggregates.avail} target={activeTargets.AVAIL} icon={AlertTriangle} className="w-full 2xl:w-64 shadow-md hover:shadow-lg transition-all" />
                                             </div>
                                             <div className="flex flex-col items-center relative w-full">
                                                 <div className="h-4 w-px bg-slate-300 absolute -top-8 hidden 2xl:block"></div>
-                                                <PillarCard title="PERFORMANCE" value={activeAggregates.perf} target={activeTargets.PERF} icon={Clock} className="w-full 2xl:w-64 mb-4 shadow-md hover:shadow-lg transition-all" />
-                                                <div className="h-6 w-px bg-slate-300 mb-2 hidden 2xl:block"></div>
-                                                <div className="bg-white border border-slate-200 rounded-lg p-2 text-left w-full 2xl:w-64 text-xs shadow-sm space-y-1">
-                                                    <div className="flex justify-between items-center text-slate-500 border-b border-slate-100 pb-1 mb-1 font-bold"><span>Detalhamento de Perdas</span></div>
-                                                    <MiniDreRow label="Ritmo Forno a Forno" value={treeStats.rhythmLoss.val} target={treeStats.rhythmLoss.target} />
-                                                    <MiniDreRow label="Perda Operacional" value={treeStats.opsLoss.val} target={treeStats.opsLoss.target} />
-                                                    <MiniDreRow label="Troca de Turno" value={treeStats.shiftLoss.val} target={treeStats.shiftLoss.target} />
-                                                    <div className="border-t border-slate-100 pt-1 mt-1 text-[10px] text-slate-500 space-y-0.5"><div className="flex justify-between"><span>Fornos:</span> <span className="font-bold">{treeStats.totalOvens}</span></div><div className="flex justify-between"><span>Volume:</span> <span className="font-bold">{treeStats.totalVolume} t</span></div><div className="flex justify-between"><span>Ciclo Médio:</span> <span className="font-bold">{treeStats.avgCycle} min</span></div><div className="flex justify-between"><span>Ciclo Líquido:</span> <span className="font-bold">{treeStats.netCycle} min</span></div></div>
-                                                    <div className="flex justify-between items-center border-t-2 border-slate-100 pt-2 mt-1"><span className="font-bold text-slate-700">T. Líquido</span><span className="font-bold text-slate-700 bg-slate-100 px-1.5 rounded">{treeStats.netOperating} h</span></div>
-                                                </div>
+                                                <PillarCard title="PERFORMANCE" value={activeAggregates.perf} target={activeTargets.PERF} icon={Clock} className="w-full 2xl:w-64 shadow-md hover:shadow-lg transition-all" />
                                             </div>
                                             <div className="flex flex-col items-center relative w-full">
                                                 <div className="h-4 w-px bg-slate-300 absolute -top-8 hidden 2xl:block"></div>
-                                                <PillarCard title="QUALIDADE (YIELD)" value={activeAggregates.qual} target={activeTargets.QUAL} icon={CheckCircle} className="w-full 2xl:w-64 mb-4 shadow-md hover:shadow-lg transition-all" />
-                                                <div className="h-6 w-px bg-slate-300 mb-2 hidden 2xl:block"></div>
-                                                <div className="bg-white border border-slate-200 rounded-lg p-2 text-left w-full 2xl:w-64 text-xs shadow-sm space-y-1">
-                                                    <div className="flex justify-between items-center text-slate-500 border-b border-slate-100 pb-1 mb-1 font-bold"><span>Detalhamento de Perdas</span></div>
-                                                    <MiniDreRow label="Perda Volume" value={treeStats.lossQual.val} target={treeStats.lossQual.target} />
-                                                    <div className="flex justify-between items-center border-t-2 border-slate-100 pt-2 mt-1"><span className="font-bold text-slate-700">Produtivo</span><span className="font-bold text-slate-700 bg-slate-100 px-1.5 rounded">{treeStats.fullyProductive} h</span></div>
-                                                </div>
+                                                <PillarCard title="QUALIDADE (YIELD)" value={activeAggregates.qual} target={activeTargets.QUAL} icon={CheckCircle} className="w-full 2xl:w-64 shadow-md hover:shadow-lg transition-all" />
                                             </div>
+                                        </div>
+
+                                        {/* Tabela OEE Detalhado abaixo da árvore */}
+                                        <div className="w-full max-w-6xl mt-6 px-2">
+                                            <Card className="p-4">
+                                                <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                                                    📊 OEE Detalhado por Período
+                                                </h3>
+                                                <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
+                                                    <table className="w-full text-xs">
+                                                        <thead className="bg-slate-100 sticky top-0">
+                                                            <tr className="text-[10px]">
+                                                                <th className="px-2 py-1 text-left">Período</th>
+                                                                <th className="px-2 py-1 text-right bg-blue-50">Calendar</th>
+                                                                <th className="px-2 py-1 text-right bg-blue-50">Loading</th>
+                                                                <th className="px-2 py-1 text-right bg-blue-50">Operating</th>
+                                                                <th className="px-2 py-1 text-right bg-blue-50">NetOper</th>
+                                                                <th className="px-2 py-1 text-right bg-red-50">Indisp</th>
+                                                                <th className="px-2 py-1 text-right bg-red-50">P. Op</th>
+                                                                <th className="px-2 py-1 text-right bg-green-50">Volume</th>
+                                                                <th className="px-2 py-1 text-right bg-orange-50">Disp %</th>
+                                                                <th className="px-2 py-1 text-right bg-orange-50">Perf %</th>
+                                                                <th className="px-2 py-1 text-right bg-orange-50 font-bold">OEE %</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-slate-100">
+                                                            {calculatedData.map((r, i) => (
+                                                                <tr key={i} className="hover:bg-slate-50">
+                                                                    <td className="px-2 py-1.5 font-medium text-slate-700">{r.label || r.day}</td>
+                                                                    <td className="px-2 py-1.5 text-right bg-blue-50/30">{r.calendar?.toFixed(0)}</td>
+                                                                    <td className="px-2 py-1.5 text-right bg-blue-50/30">{r.loadingMins?.toFixed(0)}</td>
+                                                                    <td className="px-2 py-1.5 text-right bg-blue-50/30">{r.operating?.toFixed(0)}</td>
+                                                                    <td className="px-2 py-1.5 text-right bg-blue-50/30">{r.netOperating?.toFixed(0)}</td>
+                                                                    <td className="px-2 py-1.5 text-right bg-red-50/30">{r.failureLoss?.toFixed(0) || r.lossDisp?.toFixed(0)}</td>
+                                                                    <td className="px-2 py-1.5 text-right bg-red-50/30">{r.lossUtil?.toFixed(0)}</td>
+                                                                    <td className="px-2 py-1.5 text-right bg-green-50/30">{r.wetCharge?.toFixed(1)}</td>
+                                                                    <td className="px-2 py-1.5 text-right bg-orange-50/30" style={{ color: r.avail >= activeTargets.AVAIL ? COLORS.green : COLORS.red }}>{r.avail?.toFixed(1)}%</td>
+                                                                    <td className="px-2 py-1.5 text-right bg-orange-50/30" style={{ color: r.perf >= activeTargets.PERF ? COLORS.green : COLORS.red }}>{r.perf?.toFixed(1)}%</td>
+                                                                    <td className="px-2 py-1.5 text-right bg-orange-50/30 font-bold" style={{ color: r.oee >= activeTargets.OEE ? COLORS.green : COLORS.red }}>{r.oee?.toFixed(1)}%</td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </Card>
                                         </div>
                                     </>
                                 );
@@ -527,213 +750,13 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                     </Card>
                 )}
 
-                {/* ABA: OEE DETALHADO (Debug) - MOVIDA PARA TREE SUBTAB */}
-                {activeTab === 'tree' && treeSubTab === 'detailed' && (
-                    <div className="p-4 md:p-6 overflow-y-auto">
-                        <Card className="p-6">
-                            <h3 className="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2">
-                                🔍 OEE Detalhado - Cálculos Passo a Passo ({areaMode === 'maquinas' ? 'Máquinas' : 'Pátio/Envio'})
-                            </h3>
-                            <p className="text-xs text-slate-500 mb-4">Mostrando valores extraídos das planilhas e cálculos intermediários para cada período.</p>
-
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-xs">
-                                    <thead className="bg-slate-100 sticky top-0">
-                                        <tr>
-                                            <th className="px-3 py-2 text-left font-bold text-slate-700 border-b-2 border-slate-300">Período</th>
-                                            <th colSpan="4" className="px-3 py-2 text-center font-bold text-blue-700 border-b-2 border-blue-300 bg-blue-50">TEMPOS (min)</th>
-                                            <th colSpan="3" className="px-3 py-2 text-center font-bold text-red-700 border-b-2 border-red-300 bg-red-50">PERDAS (min)</th>
-                                            <th colSpan="4" className="px-3 py-2 text-center font-bold text-green-700 border-b-2 border-green-300 bg-green-50">PERFORMANCE</th>
-                                            <th colSpan="3" className="px-3 py-2 text-center font-bold text-orange-700 border-b-2 border-orange-300 bg-orange-50">RESULTADO</th>
-                                        </tr>
-                                        <tr className="text-[10px]">
-                                            <th className="px-3 py-1 text-left">Data</th>
-                                            <th className="px-3 py-1 text-right bg-blue-50">Calendar</th>
-                                            <th className="px-3 py-1 text-right bg-blue-50">Loading</th>
-                                            <th className="px-3 py-1 text-right bg-blue-50">Operating</th>
-                                            <th className="px-3 py-1 text-right bg-blue-50">NetOper</th>
-                                            <th className="px-3 py-1 text-right bg-red-50">SL/Prev</th>
-                                            <th className="px-3 py-1 text-right bg-red-50">Indisp</th>
-                                            <th className="px-3 py-1 text-right bg-red-50">Perda Op</th>
-                                            <th className="px-3 py-1 text-right bg-green-50">Volume</th>
-                                            <th className="px-3 py-1 text-right bg-green-50">AVOL</th>
-                                            <th className="px-3 py-1 text-right bg-green-50">UF</th>
-                                            <th className="px-3 py-1 text-right bg-green-50">ADTX/ADFN</th>
-                                            <th className="px-3 py-1 text-right bg-orange-50">Disp %</th>
-                                            <th className="px-3 py-1 text-right bg-orange-50">Perf %</th>
-                                            <th className="px-3 py-1 text-right bg-orange-50 font-bold">OEE %</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                        {calculatedData.map((r, i) => {
-                                            const slPrev = r.calendar - r.loadingMins;
-                                            const txReal = r.netOperating > 0 ? (r.wetCharge / (r.netOperating / 60)) : 0;
-                                            return (
-                                                <tr key={i} className="hover:bg-slate-50">
-                                                    <td className="px-3 py-2 font-medium text-slate-700">{r.label || r.day}</td>
-                                                    <td className="px-3 py-2 text-right bg-blue-50/50">{r.calendar?.toFixed(0)}</td>
-                                                    <td className="px-3 py-2 text-right bg-blue-50/50">{r.loadingMins?.toFixed(0)}</td>
-                                                    <td className="px-3 py-2 text-right bg-blue-50/50">{r.operating?.toFixed(0)}</td>
-                                                    <td className="px-3 py-2 text-right bg-blue-50/50">{r.netOperating?.toFixed(0)}</td>
-                                                    <td className="px-3 py-2 text-right bg-red-50/50">{slPrev?.toFixed(0)}</td>
-                                                    <td className="px-3 py-2 text-right bg-red-50/50">{r.failureLoss?.toFixed(0) || r.lossDisp?.toFixed(0)}</td>
-                                                    <td className="px-3 py-2 text-right bg-red-50/50">{r.lossUtil?.toFixed(0)}</td>
-                                                    <td className="px-3 py-2 text-right bg-green-50/50">{r.wetCharge?.toFixed(1)}</td>
-                                                    <td className="px-3 py-2 text-right bg-green-50/50">{(r.AVOL * 100)?.toFixed(1)}%</td>
-                                                    <td className="px-3 py-2 text-right bg-green-50/50">{(r.UF * 100)?.toFixed(1)}%</td>
-                                                    <td className="px-3 py-2 text-right bg-green-50/50">
-                                                        {areaMode === 'patio' ?
-                                                            `${(r.ADTX * 100)?.toFixed(1)}%` :
-                                                            `${(r.ADFN * 100)?.toFixed(1)}%`
-                                                        }
-                                                        <span className="block text-[9px] text-slate-400">
-                                                            {areaMode === 'patio' && `TX=${txReal.toFixed(1)} t/h`}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-3 py-2 text-right bg-orange-50/50" style={{ color: r.avail >= activeTargets.AVAIL ? COLORS.green : COLORS.red }}>{r.avail?.toFixed(1)}%</td>
-                                                    <td className="px-3 py-2 text-right bg-orange-50/50" style={{ color: r.perf >= activeTargets.PERF ? COLORS.green : COLORS.red }}>{r.perf?.toFixed(1)}%</td>
-                                                    <td className="px-3 py-2 text-right bg-orange-50/50 font-bold" style={{ color: r.oee >= activeTargets.OEE ? COLORS.green : COLORS.red }}>{r.oee?.toFixed(1)}%</td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
-
-                            {/* Fórmulas explicativas */}
-                            <div className="mt-6 p-4 bg-slate-100 rounded-lg text-xs">
-                                <h4 className="font-bold text-slate-700 mb-2">📐 Fórmulas aplicadas ({areaMode === 'maquinas' ? 'Máquinas' : 'Pátio/Envio'}):</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-mono text-[10px]">
-                                    <div>
-                                        <p className="font-bold text-blue-700">TEMPOS:</p>
-                                        <p>Calendar = {areaMode === 'patio' ? '24' : '48'}h × 60 = {areaMode === 'patio' ? '1440' : '2880'} min</p>
-                                        <p>Loading = Calendar - SL_Real (Preventiva)</p>
-                                        <p>Operating = Loading - lossDisp (Indisp)</p>
-                                        <p>NetOper = Operating - lossUtil (Perda Op)</p>
-                                    </div>
-                                    <div>
-                                        <p className="font-bold text-green-700">PERFORMANCE ({areaMode === 'patio' ? 'ADTX' : 'ADFN'}):</p>
-                                        {areaMode === 'patio' ? (
-                                            <>
-                                                <p>AVOL = Volume Real / VOL_META (4188)</p>
-                                                <p>UF = NetOper / Operating</p>
-                                                <p>TX_REAL = Volume / (NetOper/60) [t/h]</p>
-                                                <p>ADTX = TX_REAL / TX_META (301)</p>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <p>AVOL = wetCharge / (FN×VOL_THEORY)</p>
-                                                <p>UF = NetOper / Operating</p>
-                                                <p>ADFN = cycleTheory / cycleReal</p>
-                                            </>
-                                        )}
-                                    </div>
-                                    <div>
-                                        <p className="font-bold text-orange-700">RESULTADO:</p>
-                                        <p>DF = Operating / Loading</p>
-                                        <p>PE = AVOL × UF × {areaMode === 'patio' ? 'ADTX' : 'ADFN'}</p>
-                                        <p>QA = {areaMode === 'patio' ? '100% (fixo)' : 'Yield do VTO'}</p>
-                                        <p className="font-bold">OEE = DF × PE × QA</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* DEBUG: Mostrar constantes usadas */}
-                            {areaMode === 'patio' && (
-                                <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
-                                    <h4 className="font-bold text-purple-700 mb-2">⚙️ CONSTANTES PÁTIO/ENVIO (BUSINESS_CONSTANTS_PATIO):</h4>
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs font-mono">
-                                        <div className="bg-white p-2 rounded"><strong>TC_META:</strong> {BUSINESS_CONSTANTS_PATIO.TC_META}h</div>
-                                        <div className="bg-white p-2 rounded"><strong>SL_META:</strong> {BUSINESS_CONSTANTS_PATIO.SL_META}h</div>
-                                        <div className="bg-white p-2 rounded"><strong>VOL_META:</strong> {BUSINESS_CONSTANTS_PATIO.VOL_META} ton</div>
-                                        <div className="bg-white p-2 rounded"><strong>TX_META:</strong> {BUSINESS_CONSTANTS_PATIO.TX_META} t/h</div>
-                                        <div className="bg-white p-2 rounded"><strong>CO_META:</strong> {BUSINESS_CONSTANTS_PATIO.CO_META}h</div>
-                                        <div className="bg-white p-2 rounded"><strong>STP_META:</strong> {BUSINESS_CONSTANTS_PATIO.STP_META}h</div>
-                                        <div className="bg-white p-2 rounded"><strong>QA_META:</strong> {BUSINESS_CONSTANTS_PATIO.QA_META}%</div>
-                                        <div className="bg-white p-2 rounded"><strong>Definido:</strong> {BUSINESS_CONSTANTS_PATIO ? '✅ Sim' : '❌ Não'}</div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* DEBUG: Mostrar paradas individuais (apenas Pátio) */}
-                            {areaMode === 'patio' && activeRawData.stops && activeRawData.stops.length > 0 && (
-                                <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                                    <h4 className="font-bold text-yellow-700 mb-2">🔧 DEBUG: Paradas de Pátio/Envio ({activeRawData.stops.length} registros)</h4>
-                                    <p className="text-[10px] text-yellow-600 mb-2">Mostrando primeiros 20 registros com valores lidos das colunas Tipo (K) e Área (I):</p>
-                                    <div className="overflow-x-auto max-h-60 overflow-y-auto">
-                                        <table className="w-full text-[10px]">
-                                            <thead className="bg-yellow-100 sticky top-0">
-                                                <tr>
-                                                    <th className="px-2 py-1 text-left">#</th>
-                                                    <th className="px-2 py-1 text-left">Data</th>
-                                                    <th className="px-2 py-1 text-left">Tipo (col K)</th>
-                                                    <th className="px-2 py-1 text-left">Área (col I)</th>
-                                                    <th className="px-2 py-1 text-right">Duração (min)</th>
-                                                    <th className="px-2 py-1 text-left">Categoria</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-yellow-200">
-                                                {activeRawData.stops.slice(0, 20).map((s, i) => {
-                                                    const tipoLower = (s.tipo || '').toLowerCase();
-                                                    const areaLower = (s.area || '').toLowerCase();
-                                                    let categoria = 'Não categorizado';
-                                                    if (tipoLower.includes('programada') && !tipoLower.includes('não')) {
-                                                        categoria = '✅ SL/Preventiva';
-                                                    } else if (tipoLower.includes('não programada') || tipoLower.includes('nao programada')) {
-                                                        if (areaLower.includes('manut')) categoria = '🔴 Indisponibilidade';
-                                                        else if (areaLower.includes('produ')) categoria = '🟡 Perda Operacional';
-                                                    }
-                                                    return (
-                                                        <tr key={i} className="hover:bg-yellow-100">
-                                                            <td className="px-2 py-1">{i + 1}</td>
-                                                            <td className="px-2 py-1">{s.dateStr}</td>
-                                                            <td className="px-2 py-1 font-mono bg-white">{s.tipo || '(vazio)'}</td>
-                                                            <td className="px-2 py-1 font-mono bg-white">{s.area || '(vazio)'}</td>
-                                                            <td className="px-2 py-1 text-right">{s.duration?.toFixed(1)}</td>
-                                                            <td className="px-2 py-1 font-bold">{categoria}</td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* DEBUG: Mostrar dados de prodPatio (Volume do Totalizador) */}
-                            {areaMode === 'patio' && (
-                                <div className="mt-6 p-4 bg-cyan-50 border border-cyan-200 rounded-lg">
-                                    <h4 className="font-bold text-cyan-700 mb-2">📦 DEBUG: Dados de Produção Pátio (prodPatio do Totalizador)</h4>
-                                    <p className="text-[10px] text-cyan-600 mb-2">
-                                        Total de registros: {Object.keys(activeRawData.prod || {}).length} |
-                                        Usando: {rawData.prodPatio ? 'prodPatio' : 'ERRO: prodPatio não existe!'}
-                                    </p>
-                                    <div className="overflow-x-auto max-h-40 overflow-y-auto">
-                                        <table className="w-full text-[10px]">
-                                            <thead className="bg-cyan-100 sticky top-0">
-                                                <tr>
-                                                    <th className="px-2 py-1 text-left">Data</th>
-                                                    <th className="px-2 py-1 text-right">wetCharge (Volume)</th>
-                                                    <th className="px-2 py-1 text-right">yield</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-cyan-200">
-                                                {Object.entries(activeRawData.prod || {}).slice(0, 10).map(([date, data]) => (
-                                                    <tr key={date} className="hover:bg-cyan-100">
-                                                        <td className="px-2 py-1">{date}</td>
-                                                        <td className="px-2 py-1 text-right font-bold">{data.wetCharge?.toLocaleString('pt-BR')}</td>
-                                                        <td className="px-2 py-1 text-right">{data.yield}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            )}
-                        </Card>
-                    </div>
-                )}
             </div>
+            {showBridgeExplainer && (
+                <BridgeChartExplanation aggregates={activeAggregates} areaMode={areaMode} onClose={() => setShowBridgeExplainer(false)} />
+            )}
+            {showOEEExplainer && (
+                <OEEExplanation aggregates={activeAggregates} areaMode={areaMode} onClose={() => setShowOEEExplainer(false)} />
+            )}
         </div>
     );
 }

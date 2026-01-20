@@ -417,11 +417,11 @@ export const calculateOEEData = (rawData, dateRange, aggregation, equipmentFilte
             const netOperatingHours = netOperating / 60;
             const txReal = (netOperatingHours > 0 && volumeReal > 0) ? (volumeReal / netOperatingHours) : 0;
 
-            // ADTX = TX_REAL / TX_META (maior taxa = melhor performance)
-            ADTX = BC.TX_META > 0 ? (txReal / BC.TX_META) : 0;
+            // ADTX = TX_REAL / TX_THEORY (maior taxa = melhor performance)
+            ADTX = BC.TX_THEORY > 0 ? (txReal / BC.TX_THEORY) : 0;
             ADFN = 0; // Não usado para Pátio
 
-            perfFinal = AVOL * UF * ADTX;
+            perfFinal = UF * ADTX; // Pátio: sem AVOL
         } else {
             // Máquinas: usa ADFN original
             const totalVolReal = p.wetCharge;
@@ -489,10 +489,10 @@ export const calculateOEEData = (rawData, dateRange, aggregation, equipmentFilte
 
             const netOperatingHours = g.netOperating / 60;
             const txReal = (netOperatingHours > 0 && g.wetCharge > 0) ? (g.wetCharge / netOperatingHours) : 0;
-            ADTX = BC.TX_META > 0 ? (txReal / BC.TX_META) : 0;
+            ADTX = BC.TX_THEORY > 0 ? (txReal / BC.TX_THEORY) : 0;
             ADFN = 0;
 
-            perf = AVOL * UF * ADTX;
+            perf = UF * ADTX; // Pátio: sem AVOL
             qual = 1; // Pátio sempre 100%
         } else {
             // Máquinas: usa FN_THEORY/VOL_THEORY e ADFN
@@ -563,10 +563,10 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
 
         const netOperatingHours = totalNetOperating / 60;
         const txReal = (netOperatingHours > 0 && totalWetCharge > 0) ? (totalWetCharge / netOperatingHours) : 0;
-        ADTX_Global = BC.TX_META > 0 ? (txReal / BC.TX_META) : 0;
+        ADTX_Global = BC.TX_THEORY > 0 ? (txReal / BC.TX_THEORY) : 0;
         ADFN_Global = 0;
 
-        perfGlobal = AVOL_Global * UF_Global * ADTX_Global;
+        perfGlobal = UF_Global * ADTX_Global; // Pátio: sem AVOL
         qualGlobal = 1; // Pátio sempre 100%
     } else {
         // Máquinas: usa FN_THEORY/VOL_THEORY e ADFN
@@ -589,7 +589,7 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
     const oeeGlobal = availGlobal * perfGlobal * qualGlobal;
 
     const targetOvens = isPatio ? 0 : BUSINESS_CONSTANTS.FN_META * totalDays;
-    const ritmoMin = totalOvens > 0 ? (totalOperating / totalOvens) : 0;
+    const ritmoMin = totalOvens > 0 ? (totalLoading / totalOvens) : 0;
     const targetShiftChange = isPatio ? 0 : totalDays * 3 * 60;
 
     const checkDays = new Set();
@@ -598,6 +598,84 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
         checkDays.add(s.dateStr);
     });
 
+    // ========= BRIDGE PÁTIO: Calcular metas por dia da semana =========
+    let patioBridgeMeta = null;
+    let patioBridgeReal = null;
+
+    if (isPatio) {
+        // Calcular metas acumuladas considerando dia da semana
+        let totalPPM = 0;   // Paradas Programadas Meta acumulada
+        let totalSLM = 0;   // Schedule Loss Meta acumulada
+        let totalLTM = 0;   // Loading Time Meta acumulada
+        let totalTLM = 0;   // Tempo Líquido Meta acumulado
+        let totalTLIQxDay = 0; // Soma de TLIQ * dia (para média ponderada)
+        let thursdays = 0;
+        let otherDays = 0;
+
+        // Usa as datas do período selecionado
+        const startDate = new Date(dateRange.start + 'T12:00:00');
+        const endDate = new Date(dateRange.end + 'T12:00:00');
+
+        for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+            const dayOfWeek = d.getDay(); // 0=domingo, 4=quinta
+            const isThursday = dayOfWeek === 4;
+
+            const PPM_day = isThursday ? BC.PPM_THURSDAY : BC.PPM_OTHER;
+            const SLM_day = PPM_day + BC.TTM;
+            const LTM_day = BC.TC_META - PPM_day - BC.TTM;
+            const TLM_day = LTM_day - BC.PNPM - BC.POM;
+            const TLIQ_day = BC.VOL_META / TLM_day; // Taxa Líquida Meta do dia
+
+            totalPPM += PPM_day;
+            totalSLM += SLM_day;
+            totalLTM += LTM_day;
+            totalTLM += TLM_day;
+            totalTLIQxDay += TLIQ_day;
+
+            if (isThursday) thursdays++;
+            else otherDays++;
+        }
+
+        const TLIQ_avg = totalTLIQxDay / totalDays; // Taxa Líquida Meta média
+
+        // Valores Reais do período
+        const PPR = sum('shiftChange') / 60;  // Paradas Programadas Real (h) - usou shiftChange para PP em Pátio
+        const TTR = 0; // Troca de Turno Real - não separado por enquanto
+        const SLR = PPR + TTR;
+        const PNPR = sum('failureLoss') / 60; // Indisponibilidade Real (h)
+        const POR = sum('opsLoss') / 60;      // Perda Operacional Real (h)
+        const LTR = (totalDays * BC.TC_META) - SLR;
+        const TLR = LTR - PNPR - POR;
+        const TLIQR = TLR > 0 ? totalWetCharge / TLR : 0; // Taxa Líquida Real
+
+        patioBridgeMeta = {
+            VM: BC.VOL_META * totalDays,      // Volume Meta total
+            PPM: totalPPM,                    // Paradas Programadas Meta (h)
+            TTM: BC.TTM * totalDays,          // Troca de Turno Meta (h)
+            SLM: totalSLM,                    // Schedule Loss Meta (h)
+            PNPM: BC.PNPM * totalDays,        // Paradas Não Programadas Meta (h)
+            POM: BC.POM * totalDays,          // Perda Operacional Meta (h)
+            CC: BC.TC_META * totalDays,       // Ciclo Calendário (h)
+            LTM: totalLTM,                    // Loading Time Meta (h)
+            TLM: totalTLM,                    // Tempo Líquido Meta (h)
+            TLIQ: TLIQ_avg,                   // Taxa Líquida Meta média (t/h)
+            thursdays: thursdays,
+            otherDays: otherDays
+        };
+
+        patioBridgeReal = {
+            VR: totalWetCharge,               // Volume Real
+            PPR: PPR,                         // Paradas Programadas Real (h)
+            TTR: TTR,                         // Troca de Turno Real (h)
+            SLR: SLR,                         // Schedule Loss Real (h)
+            PNPR: PNPR,                       // Indisponibilidade Real (h)
+            POR: POR,                         // Perda Operacional Real (h)
+            LTR: LTR,                         // Loading Time Real (h)
+            TLR: TLR,                         // Tempo Líquido Real (h)
+            TLIQR: TLIQR                      // Taxa Líquida Real (t/h)
+        };
+    }
+
     let winStartOkNorte = 0, winStartOkSul = 0;
     let winEndOkNorte = 0, winEndOkSul = 0;
     let winInsideOkNorte = 0, winInsideOkSul = 0;
@@ -605,12 +683,30 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
     let winFreqScoreSum = 0;
     let daysWithStopNorte = 0, daysWithStopSul = 0;
 
+    // Novos contadores (Janelas 5h e Simultâneas)
+    let count5hNorte = 0, count5hSul = 0;
+    let countSimultaneous = 0, countSimultaneous5h = 0;
+
+    // Contadores PÁTIO: Quintas vs Outros
+    let patioDaysWithStopThursday = 0, patioDaysWithStopOther = 0;
+    let patioInsideOkThursday = 0, patioInsideOkOther = 0;
+    let patioStartOkThursday = 0, patioStartOkOther = 0;
+    let patioEndOkThursday = 0, patioEndOkOther = 0;
+
     Array.from(checkDays).forEach(dateStr => {
         const dayStops = rawData.stops.filter(s => s.dateStr === dateStr);
         let hasNorte = false, hasSul = false;
         let minStartNorte = null, maxEndNorte = null;
         let minStartSul = null, maxEndSul = null;
         let durNorte = 0, durSul = 0;
+
+        // Para Pátio: verificar se é quinta-feira
+        const dateObj = new Date(dateStr + 'T12:00:00');
+        const isThursday = dateObj.getDay() === 4;
+
+        // Para Pátio: verificar se houve alguma parada programada
+        let hasPatioStop = false;
+        let patioMinStart = null, patioMaxEnd = null;
 
         dayStops.forEach(s => {
             const bateriaLower = (s.bateria || '').toLowerCase();
@@ -627,7 +723,31 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
                     if (!maxEndSul || s.end > maxEndSul) maxEndSul = s.end;
                 }
             }
+
+            // Pátio: verificar paradas programadas (preventivas)
+            if (isPatio) {
+                const parouSim = (s.parou || '').toLowerCase().includes('sim');
+                const isPreventiva = (s.tipo || '').toLowerCase().includes('prevent');
+                if (parouSim && isPreventiva) {
+                    hasPatioStop = true;
+                    if (!patioMinStart || s.start < patioMinStart) patioMinStart = s.start;
+                    if (!patioMaxEnd || s.end > patioMaxEnd) patioMaxEnd = s.end;
+                }
+            }
         });
+
+        // Tolerância para 5h = 290 min (4h50)
+        const THRESHOLD_5H = 290;
+
+        // Contabilizar Janelas de 5h
+        if (hasNorte && durNorte >= THRESHOLD_5H) count5hNorte++;
+        if (hasSul && durSul >= THRESHOLD_5H) count5hSul++;
+
+        // Contabilizar Simultâneas
+        if (hasNorte && hasSul) {
+            countSimultaneous++;
+            if (durNorte >= THRESHOLD_5H && durSul >= THRESHOLD_5H) countSimultaneous5h++;
+        }
 
         const checkTime = (dateObj, targetH, targetM, tolerance) => {
             if (!dateObj) return false;
@@ -640,6 +760,15 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
             const sVal = startObj.getHours() * 60 + startObj.getMinutes();
             const eVal = endObj.getHours() * 60 + endObj.getMinutes();
             return sVal >= (8 * 60 - 15) && eVal <= (17 * 60 + 15);
+        };
+
+        // Função específica para Pátio: dentro do horário (Qui: 8-16h, Outros: 8-12h)
+        const checkInsidePatio = (startObj, endObj, thursday) => {
+            if (!startObj || !endObj) return false;
+            const sVal = startObj.getHours() * 60 + startObj.getMinutes();
+            const eVal = endObj.getHours() * 60 + endObj.getMinutes();
+            const endLimit = thursday ? 16 * 60 : 12 * 60;
+            return sVal >= (8 * 60 - 15) && eVal <= (endLimit + 15);
         };
 
         if (hasNorte) {
@@ -661,6 +790,21 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
         if (hasNorte || hasSul) {
             if (hasNorte && hasSul) winFreqScoreSum += 100;
             else winFreqScoreSum += 50;
+        }
+
+        // =========== PÁTIO: Contabilizar por Quinta vs Outros ===========
+        if (isPatio && hasPatioStop) {
+            if (isThursday) {
+                patioDaysWithStopThursday++;
+                if (checkTime(patioMinStart, 8, 0, 15)) patioStartOkThursday++;
+                if (checkTime(patioMaxEnd, 16, 0, 15)) patioEndOkThursday++;
+                if (checkInsidePatio(patioMinStart, patioMaxEnd, true)) patioInsideOkThursday++;
+            } else {
+                patioDaysWithStopOther++;
+                if (checkTime(patioMinStart, 8, 0, 15)) patioStartOkOther++;
+                if (checkTime(patioMaxEnd, 12, 0, 15)) patioEndOkOther++;
+                if (checkInsidePatio(patioMinStart, patioMaxEnd, false)) patioInsideOkOther++;
+            }
         }
     });
 
@@ -705,7 +849,52 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
         winStartOkNorte, winStartOkSul, winEndOkNorte, winEndOkSul, winInsideOkNorte, winInsideOkSul,
         windowAvgDurNorte: (winDurPctNorteSum / totalDaysWindow).toFixed(0),
         windowAvgDurSul: (winDurPctSulSum / totalDaysWindow).toFixed(0),
-        windowFreqScore: (winFreqScoreSum / totalDaysWindow).toFixed(0)
+        windowFreqScore: (winFreqScoreSum / totalDaysWindow).toFixed(0),
+
+        // Novos Campos
+        count5hNorte, count5hSul, countSimultaneous, countSimultaneous5h,
+        ritmoMetaMin: BC.FN_THEORY, // Adicionando ritmo meta (geralmente 10)
+
+        // ============ PÁTIO: Checklist de Janela ============
+        patioDaysWithStop: patioDaysWithStopThursday + patioDaysWithStopOther,
+        patioDaysWithStopThursday,
+        patioDaysWithStopOther,
+        patioInsideOkThursday,
+        patioInsideOkOther,
+        patioStartOkThursday,
+        patioStartOkOther,
+        patioEndOkThursday,
+        patioEndOkOther,
+
+        // ============ BRIDGE CHART MÁQUINAS - NOVA LÓGICA ============
+        // Constantes calculadas (Metas derivadas) - PROPORCIONAIS AO PERÍODO
+        bridgeMeta: {
+            FM: BC.FN_META * totalDays,                               // Fornos Meta = 160 * dias
+            PPM: 10 * 60 * totalDays,                                 // Paradas Programadas Meta = 10h * dias
+            TTM: 3 * 60 * totalDays,                                  // Troca de Turno Meta = 3h * dias
+            PNPM: BC.CO_META * 60 * totalDays,                        // Paradas Não Programadas Meta = 3h * dias
+            POM: BC.STP_META * 60 * totalDays,                        // Perda Operacional Meta = 2h * dias
+            CC: BC.TC_META * 60 * totalDays,                          // Ciclo Calendário = 48h * dias
+            LT: (BC.TC_META - 10 - 3) * 60 * totalDays,               // Loading Time Meta = 35h * dias
+            TL: (BC.TC_META - 10 - 3 - BC.CO_META - BC.STP_META) * 60 * totalDays, // Tempo Líquido Meta = 30h * dias
+            FFL: ((BC.TC_META - 10 - 3 - BC.CO_META - BC.STP_META) * 60) / BC.FN_META, // 11.25 min/forno (NÃO muda com dias)
+            DM: ((BC.TC_META - 10 - 3) * 60 - BC.CO_META * 60) / ((BC.TC_META - 10 - 3) * 60), // 91.43% (percentual)
+            UM: (((BC.TC_META - 10 - 3 - BC.CO_META) * 60) - BC.STP_META * 60) / ((BC.TC_META - 10 - 3 - BC.CO_META) * 60) // 93.75% (percentual)
+        },
+        // Valores Reais agregados para Bridge
+        bridgeReal: {
+            FR: totalOvens,                                          // Fornos Real
+            PPR: sum('totalUsedMaint'),                              // Paradas Programadas Real (Janelas usadas)
+            TTR: sum('shiftChange'),                                 // Troca de Turno Real
+            PNPR: sum('failureLoss') + sum('extMaint') + sum('outsideMaint'), // Paradas Não Programadas Real
+            POR: sum('opsLoss') + sum('excessShift'),                // Perda Operacional Real
+            LTR: totalDays * BC.TC_META * 60 - sum('totalUsedMaint') - sum('shiftChange'), // Loading Time Real
+            TLR: totalNetOperating                                   // Tempo Líquido Real
+        },
+
+        // ============ BRIDGE CHART PÁTIO ============
+        patioBridgeMeta: patioBridgeMeta,
+        patioBridgeReal: patioBridgeReal
     };
 };
 
@@ -993,4 +1182,57 @@ export const calculateParetoData = (rawData, dateRange, filterSelection, aggrega
         .sort((a, b) => b.value - a.value).slice(0, 10);
 
     return { topEquipmentsData: processPareto(reasonsEquip), topCausesData: processPareto(reasonsCause) };
+};
+
+export const calculateWindowHoursData = (rawData, dateRange, aggregation) => {
+    // Calcula as horas de janela por período para Norte e Sul
+    if (!rawData.stops || rawData.stops.length === 0) return [];
+
+    const windowStopsMap = {};
+
+    rawData.stops.forEach(s => {
+        if (s.dateStr < dateRange.start || s.dateStr > dateRange.end) return;
+
+        const bateriaLower = (s.bateria || '').toLowerCase();
+        const isJanela = bateriaLower.includes('janela a/b') || bateriaLower.includes('janela c/d');
+        if (!isJanela) return;
+
+        const { key, label } = getAggregationKey(s.dateStr, aggregation);
+        const quenchLower = (s.quench || '').toLowerCase();
+        const isNorte = quenchLower.includes('norte') || quenchLower.includes('north');
+
+        if (!windowStopsMap[key]) {
+            windowStopsMap[key] = { key, label, minsNorte: 0, minsSul: 0 };
+        }
+
+        if (isNorte) {
+            windowStopsMap[key].minsNorte += s.duration || 0;
+        } else {
+            windowStopsMap[key].minsSul += s.duration || 0;
+        }
+    });
+
+    // Tolerância: 5h = 300 min, tolerância de ±10 min = [290, 310]
+    const TARGET_MIN = 290;
+    const TARGET_MAX = 310;
+
+    const results = Object.values(windowStopsMap).map(d => {
+        const hoursNorte = parseFloat((d.minsNorte / 60).toFixed(2));
+        const hoursSul = parseFloat((d.minsSul / 60).toFixed(2));
+
+        // Verde se dentro da tolerância (4h50 - 5h10), vermelho caso contrário ou zerado
+        const isOkNorte = d.minsNorte >= TARGET_MIN && d.minsNorte <= TARGET_MAX;
+        const isOkSul = d.minsSul >= TARGET_MIN && d.minsSul <= TARGET_MAX;
+
+        return {
+            key: d.key,
+            label: d.label,
+            hoursNorte,
+            hoursSul,
+            colorNorte: isOkNorte ? '#22c55e' : '#ef4444', // green-500 / red-500
+            colorSul: isOkSul ? '#22c55e' : '#ef4444'
+        };
+    });
+
+    return results.sort((a, b) => a.key.localeCompare(b.key));
 };

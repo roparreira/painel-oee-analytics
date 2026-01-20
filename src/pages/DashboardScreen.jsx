@@ -2,19 +2,23 @@ import React, { useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import OEEDashboardContent from '../components/OEEDashboardContent';
 import FailuresAnalysisDashboard from '../components/FailuresAnalysisDashboard';
+import TBMDashboard from '../components/TBMDashboard';
 
 export default function DashboardScreen({ rawData, initialDateRange, areaMode, setAreaMode }) {
     const [activeModule, setActiveModule] = useState('oee');
-    const [activeSubTab, setActiveSubTab] = useState('tree'); // Default to Desdobramento OEE
+    const [activeSubTab, setActiveSubTab] = useState('overview'); // Default to Visão Geral
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
     // Handler para mudar de módulo
     const handleModuleChange = (moduleId) => {
         setActiveModule(moduleId);
         // Definir subtab padrão ao trocar de módulo
         if (moduleId === 'oee') {
-            setActiveSubTab('tree');
+            setActiveSubTab('overview');
         } else if (moduleId === 'failures') {
             setActiveSubTab('rcfas');
+        } else if (moduleId === 'tbm') {
+            setActiveSubTab('tbm_dashboard');
         }
     };
 
@@ -25,6 +29,8 @@ export default function DashboardScreen({ rawData, initialDateRange, areaMode, s
                 activeSubTab={activeSubTab}
                 onChange={handleModuleChange}
                 onSubTabChange={setActiveSubTab}
+                isCollapsed={isSidebarCollapsed}
+                onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
             />
 
             <div className="flex-1 flex flex-col h-full overflow-hidden relative">
@@ -44,6 +50,10 @@ export default function DashboardScreen({ rawData, initialDateRange, areaMode, s
                         activeSubTab={activeSubTab}
                         setActiveSubTab={setActiveSubTab}
                     />
+                )}
+
+                {activeModule === 'tbm' && (
+                    <TBMDashboard />
                 )}
             </div>
         </div>

@@ -15,6 +15,7 @@ const BridgeLabel = (props) => {
     let fill = COLORS.darkGray;
     if (entry.name === 'Meta') fill = COLORS.darkGray;
     else if (entry.name === 'Real') fill = COLORS.blue;
+    else if (entry.name === 'Ausência Janela') fill = isGain ? COLORS.yellow : COLORS.red;
     else fill = isGain ? COLORS.green : COLORS.red;
 
     // Para Pátio, formata o número com locale
@@ -38,91 +39,120 @@ const BridgeChart = memo(({ aggregates, areaMode = 'maquinas' }) => {
     let meta, actual, data;
 
     if (isPatio) {
-        // PÁTIO: Calcula em VOLUME (toneladas)
-        const totalDays = aggregates.totalDays || 1;
-        meta = Math.round(BUSINESS_CONSTANTS_PATIO.VOL_META * totalDays);
-        actual = Math.round(aggregates.totalWetCharge || 0);
+        // PÁTIO: Nova lógica com 4 parcelas em Volume
+        const bm = aggregates.patioBridgeMeta || {};
+        const br = aggregates.patioBridgeReal || {};
 
-        // Para Pátio, simplificamos as perdas
-        const loadingHours = (aggregates.loadingMins || 0) / 60;
-        const operatingHours = (aggregates.operatingMins || 0) / 60;
-        const netOperatingHours = (aggregates.netOperatingMins || 0) / 60;
+        if (!bm.VM || !br.VR) {
+            // Fallback para lógica antiga se não houver dados
+            const totalDays = aggregates.totalDays || 1;
+            meta = Math.round(BUSINESS_CONSTANTS_PATIO.VOL_META * totalDays);
+            actual = Math.round(aggregates.totalWetCharge || 0);
+            data = [
+                { name: 'Meta', base: 0, value: meta, label: meta, isTotal: true, type: 'start' },
+                { name: 'Real', base: 0, value: actual, label: actual, isTotal: true, type: 'end' }
+            ];
+        } else {
+            meta = Math.round(bm.VM);
+            actual = Math.round(br.VR);
 
-        // Calcula perdas em volume usando taxa meta (TX_META = 301 t/h)
-        const txMeta = BUSINESS_CONSTANTS_PATIO.TX_META;
+            // Fórmulas da Bridge em Volume (toneladas)
+            // BVSL = (SLM - SLR) * TLIQ  ->  Volume perdido por Schedule Loss
+            const BVSL = Math.round((bm.SLM - br.SLR) * bm.TLIQ);
 
-        // Perda por parada não programada (Indisponibilidade)
-        const lossDispHours = loadingHours - operatingHours;
-        const stepDisp = -Math.round(lossDispHours * txMeta);
+            // BIND = (PNPM - PNPR) * TLIQ  ->  Volume perdido por Indisponibilidade
+            const BIND = Math.round((bm.PNPM - br.PNPR) * bm.TLIQ);
 
-        // Perda operacional (UF)
-        const lossUtilHours = operatingHours - netOperatingHours;
-        const stepUtil = -Math.round(lossUtilHours * txMeta);
+            // BPOP = (POM - POR) * TLIQ  ->  Volume perdido por Perda Operacional
+            const BPOP = Math.round((bm.POM - br.POR) * bm.TLIQ);
 
-        // Diferença de taxa (ADTX) - o que sobra
-        const stepTaxa = actual - meta - stepDisp - stepUtil;
+            // BPRT = (TLIQR - TLIQ) * TLR  ->  Volume perdido/ganho por Taxa
+            const BPRT = Math.round((br.TLIQR - bm.TLIQ) * br.TLR);
 
-        let rawSteps = [
-            { name: 'Indisp.', val: stepDisp, type: 'disp' },
-            { name: 'Perda Op.', val: stepUtil, type: 'perf' },
-            { name: 'Taxa', val: stepTaxa, type: 'perf' }
-        ];
+            let rawSteps = [
+                { name: 'Ausência Janela', val: BVSL, type: 'sl' },     // Positivo = ganho (menos paradas)
+                { name: 'Indisponibilidade', val: BIND, type: 'disp' }, // Positivo = ganho (menos falhas)
+                { name: 'Perda Operacional', val: BPOP, type: 'perf' }, // Negativo = perda (mais paradas)
+                { name: 'Taxa', val: BPRT, type: 'taxa' }               // Positivo = ganho, Negativo = perda
+            ];
 
-        rawSteps.sort((a, b) => a.val - b.val);
+            // Ordenar por valor (perdas primeiro, ganhos depois)
+            rawSteps.sort((a, b) => a.val - b.val);
 
-        data = [];
-        data.push({ name: 'Meta', base: 0, value: meta, label: meta, isTotal: true, type: 'start' });
+            data = [];
+            data.push({ name: 'Meta', base: 0, value: meta, label: meta, isTotal: true, type: 'start' });
 
-        let currentLevel = meta;
+            let currentLevel = meta;
 
-        rawSteps.forEach(step => {
-            if (step.val === 0) return;
-            const isGain = step.val >= 0;
-            const absVal = Math.abs(step.val);
+            rawSteps.forEach(step => {
+                if (step.val === 0) return;
+                const isGain = step.val >= 0;
+                const absVal = Math.abs(step.val);
 
-            let base;
-            if (isGain) {
-                base = currentLevel;
-                currentLevel += step.val;
-            } else {
-                currentLevel += step.val;
-                base = currentLevel;
-            }
+                let base;
+                if (isGain) {
+                    base = currentLevel;
+                    currentLevel += step.val;
+                } else {
+                    currentLevel += step.val;
+                    base = currentLevel;
+                }
 
-            data.push({ name: step.name, base: base, value: absVal, label: step.val, isTotal: false, category: step.type, type: isGain ? 'gain' : 'loss' });
-        });
+                data.push({
+                    name: step.name,
+                    base: base,
+                    value: absVal,
+                    label: step.val,
+                    isTotal: false,
+                    category: step.type,
+                    type: isGain ? 'gain' : 'loss'
+                });
+            });
 
-        data.push({ name: 'Real', base: 0, value: actual, label: actual, isTotal: true, type: 'end' });
-
+            data.push({ name: 'Real', base: 0, value: actual, label: actual, isTotal: true, type: 'end' });
+        }
     } else {
-        // MÁQUINAS: Lógica original em fornos
-        meta = Math.round(aggregates.targetOvens || 0);
-        actual = Math.round(aggregates.ovensNumeric || 0);
-        const pace = (aggregates.ritmoMetaMin && aggregates.ritmoMetaMin > 0) ? aggregates.ritmoMetaMin : 10;
+        // MÁQUINAS: Nova lógica com franquias corrigidas
+        const bm = aggregates.bridgeMeta || {};
+        const br = aggregates.bridgeReal || {};
 
-        const loadingTimeReal = aggregates.loadingMins || 0;
-        const franchiseFailMins = loadingTimeReal * (1 - (TARGETS.AVAIL / 100));
-        const realFailMins = aggregates.failLossMins || 0;
-        const varFailMins = franchiseFailMins - realFailMins;
-        const stepFail = Math.round(varFailMins / pace);
+        meta = Math.round(bm.FM || 160);
+        actual = Math.round(br.FR || 0);
 
-        const varOtherDispMins = 0 - (aggregates.schedMaintLossMins || 0);
-        const stepOtherDisp = Math.round(varOtherDispMins / pace);
+        // Constantes Meta
+        const FM = bm.FM || 160;
+        const LT = bm.LT || (35 * 60);          // Loading Time Meta em min
+        const TL = bm.TL || (30 * 60);          // Tempo Líquido Meta em min
+        const FFL = bm.FFL || 11.25;            // Forno a Forno Líquido Meta
+        const DM = bm.DM || 0.9143;             // Disponibilidade Meta
+        const UM = bm.UM || 0.9375;             // Utilização Meta
 
-        const varPlannedMaintMins = (aggregates.targetMaintMins || 0) - (aggregates.usedMaintMins || 0);
-        const stepPlanned = Math.round(varPlannedMaintMins / pace);
+        // Valores Reais
+        const FR = br.FR || 0;
+        const PPR = br.PPR || 0;                // Paradas Programadas Real
+        const TTR = br.TTR || 0;                // Troca de Turno Real
+        const PNPR = br.PNPR || 0;              // Paradas Não Programadas Real
+        const POR = br.POR || 0;                // Perda Operacional Real
+        const LTR = br.LTR || 0;                // Loading Time Real
+        const TLR = br.TLR || 0;                // Tempo Líquido Real
 
-        const varUtilMins = 0 - ((aggregates.opsLossMins || 0) + (aggregates.shiftLossMins || 0));
-        const stepUtil = Math.round(varUtilMins / pace);
+        // Cálculos intermediários
+        const PNPMC = (1 - DM) * LTR;           // Franquia Corrigida de Indisponibilidade
+        const POMC = (1 - UM) * (LTR - PNPR);   // Franquia Corrigida de Perda Operacional
+        const NTL = LTR - PNPMC - POMC;         // Novo Tempo Líquido
+        const FFR = FR > 0 ? TLR / FR : 0;      // Forno a Forno Real
 
-        const stepRhythm = actual - meta - (stepFail + stepOtherDisp + stepPlanned + stepUtil);
+        // Parcelas do Bridge
+        const BNFSL = Math.round((NTL - TL) / FFL);           // Schedule Loss (Ganho/Perda)
+        const BIND = Math.round((PNPMC - PNPR) / FFL);        // Indisponibilidade
+        const BPOP = Math.round((POMC - POR) / FFL);          // Perda Operacional
+        const BPRT = FFR > 0 ? Math.round((TLR / FFR) - (TLR / FFL)) : 0; // Perda de Ritmo
 
         let rawSteps = [
-            { name: 'Falhas', val: stepFail, type: 'disp' },
-            { name: 'Excesso Maint.', val: stepOtherDisp, type: 'disp' },
-            { name: 'Desvio de Janela', val: stepPlanned, type: 'disp' },
-            { name: 'Utilização', val: stepUtil, type: 'perf' },
-            { name: 'Forno a Forno', val: stepRhythm, type: 'perf' }
+            { name: 'Ausência Janela', val: BNFSL, type: 'schedule' },
+            { name: 'Indisponibilidade', val: BIND, type: 'disp' },
+            { name: 'P. Operacional', val: BPOP, type: 'perf' },
+            { name: 'Forno a Forno', val: BPRT, type: 'perf' }
         ];
 
         rawSteps.sort((a, b) => a.val - b.val);
@@ -155,6 +185,8 @@ const BridgeChart = memo(({ aggregates, areaMode = 'maquinas' }) => {
     const getBarColor = (entry) => {
         if (entry.name === 'Meta') return COLORS.darkGray;
         if (entry.name === 'Real') return COLORS.blue;
+        // Ausência Janela: amarelo se positivo, vermelho se negativo
+        if (entry.name === 'Ausência Janela') return entry.label >= 0 ? COLORS.yellow : COLORS.red;
         return entry.type === 'gain' ? COLORS.green : COLORS.red;
     };
 

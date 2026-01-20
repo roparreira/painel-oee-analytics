@@ -1,6 +1,6 @@
 {
-    "totalRecords":  860,
-    "lastUpdated":  "2026-01-12 13:37:21",
+    "totalRecords":  862,
+    "lastUpdated":  "2026-01-14 13:34:45",
     "data":  [
                  {
                      "NIVEL":  "Level3",
@@ -10009,6 +10009,21 @@
                  },
                  {
                      "NIVEL":  "Level2",
+                     "METODOLOGIA":  "FTA",
+                     "DESCRICAO_RCFA":  "UH 222 - VAZAMENTO NO TROCADOR DE CALOR",
+                     "MES":  1,
+                     "RCFA":  "4833",
+                     "OCORRENCIA":  "2026-01-13",
+                     "LIDER":  "PATRICK.COMPET",
+                     "TIPO":  "RELIABILITY",
+                     "LOCAL":  "9601 6UH TRC UH222",
+                     "ANO":  2026,
+                     "CUSTO":  "0",
+                     "STATUS_RCFA":  "EM FILA",
+                     "MES_ANO":  "2026-01"
+                 },
+                 {
+                     "NIVEL":  "Level2",
                      "METODOLOGIA":  "5Whys",
                      "DESCRICAO_RCFA":  "PCM A - QUEDA DE PRESSÃO DA BOMBA M4",
                      "MES":  6,
@@ -11266,6 +11281,21 @@
                      "CUSTO":  "0",
                      "STATUS_RCFA":  "EM FILA",
                      "MES_ANO":  "2022-09"
+                 },
+                 {
+                     "NIVEL":  "Level2",
+                     "METODOLOGIA":  "FTA",
+                     "DESCRICAO_RCFA":  "PCM A¿ QUEBRA DOS REDUTORES TRASEIRO ESQUERDO E DIANTEIRO DIREITO",
+                     "MES":  1,
+                     "RCFA":  "4834",
+                     "OCORRENCIA":  "2026-01-14",
+                     "LIDER":  "HMNUNES",
+                     "TIPO":  "RELIABILITY",
+                     "LOCAL":  "9621A 7RT RVA02",
+                     "ANO":  2026,
+                     "CUSTO":  "0",
+                     "STATUS_RCFA":  "NOVO",
+                     "MES_ANO":  "2026-01"
                  },
                  {
                      "NIVEL":  null,
