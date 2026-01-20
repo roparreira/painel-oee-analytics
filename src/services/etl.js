@@ -675,6 +675,35 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
             TLR: TLR,                         // Tempo Líquido Real (h)
             TLIQR: TLIQR                      // Taxa Líquida Real (t/h)
         };
+
+        // ============ CÁLCULO DE METAS DINÂMICAS PARA PÁTIO ============
+        // Metas variam com base na proporção de Quintas vs Outros dias
+
+        // DISPONIBILIDADE META = Operating / Loading
+        // Operating = Loading - PNPM
+        // Loading = CC - SL
+        const loadingMeta = patioBridgeMeta.CC - patioBridgeMeta.SLM;
+        const operatingMeta = loadingMeta - patioBridgeMeta.PNPM;
+        const targetDispPatio = loadingMeta > 0 ? (operatingMeta / loadingMeta) * 100 : 0;
+
+        // PERFORMANCE META = UF × ADTX (sem AVOL)
+        // UF = NetOperating / Operating = TLM / operatingMeta
+        // ADTX = TX_META / TX_TEORICO = TLIQ / TX_THEORY
+        const ufMeta = operatingMeta > 0 ? (patioBridgeMeta.TLM / operatingMeta) : 0;
+        const adtxMeta = patioBridgeMeta.TLIQ / BC.TX_THEORY;
+        const targetPerfPatio = (ufMeta * adtxMeta) * 100;
+
+        // QUALIDADE META = 100% (sempre para Pátio)
+        const targetQualPatio = BC.QA_META;
+
+        // OEE META = DI × PE × QA
+        const targetOeePatio = (targetDispPatio / 100) * (targetPerfPatio / 100) * (targetQualPatio / 100) * 100;
+
+        // Adicionar targets ao patioBridgeMeta
+        patioBridgeMeta.targetDI = parseFloat(targetDispPatio.toFixed(2));
+        patioBridgeMeta.targetPE = parseFloat(targetPerfPatio.toFixed(2));
+        patioBridgeMeta.targetQA = parseFloat(targetQualPatio.toFixed(2));
+        patioBridgeMeta.targetOEE = parseFloat(targetOeePatio.toFixed(2));
     }
 
     let winStartOkNorte = 0, winStartOkSul = 0;

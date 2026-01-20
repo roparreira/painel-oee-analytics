@@ -42,10 +42,6 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
         prod: areaMode === 'maquinas' ? rawData.prod : rawData.prodPatio
     }), [areaMode, rawData]);
 
-    // Seleciona as metas da área ativa
-    const activeTargets = useMemo(() =>
-        areaMode === 'maquinas' ? TARGETS : TARGETS_PATIO
-        , [areaMode]);
 
     // Limpa filtros ao trocar de área
     useEffect(() => {
@@ -102,6 +98,22 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
 
 
     const activeAggregates = useMemo(() => calculateDashboardAggregates(calculatedData, activeRawData, validatedDateRange, filterSelection, areaMode), [calculatedData, filterSelection, activeRawData, validatedDateRange, areaMode]);
+
+    // Seleciona as metas da área ativa (para Pátio, usa metas dinâmicas se disponíveis)
+    const activeTargets = useMemo(() => {
+        if (areaMode === 'maquinas') return TARGETS;
+        // Para Pátio, tenta usar metas dinâmicas do patioBridgeMeta
+        const dynamicTargets = activeAggregates?.patioBridgeMeta;
+        if (dynamicTargets?.targetOEE !== undefined) {
+            return {
+                OEE: dynamicTargets.targetOEE,
+                AVAIL: dynamicTargets.targetDI,
+                PERF: dynamicTargets.targetPE,
+                QUAL: dynamicTargets.targetQA
+            };
+        }
+        return TARGETS_PATIO;
+    }, [areaMode, activeAggregates]);
     const treeStats = useMemo(() => calculateTreeStats(calculatedData, filterSelection), [calculatedData, filterSelection]);
     const jackKnifeData = useMemo(() => calculateJackKnifeData(activeRawData, validatedDateRange), [activeRawData, validatedDateRange]);
     const { topEquipmentsData, topCausesData } = useMemo(() => calculateParetoData(activeRawData, validatedDateRange, filterSelection, aggregation, lossFilter, equipmentFilter), [activeRawData, validatedDateRange, filterSelection, aggregation, lossFilter, equipmentFilter]);
