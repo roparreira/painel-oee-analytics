@@ -127,7 +127,8 @@ export const processFiles = async (fileStop, fileProd, fileDespacho = null) => {
             modo: String(r[idxS.modo] || '').trim(),
             parou: valParou,
             bateria: (idxS.bateria > -1) ? String(r[idxS.bateria] || '').trim() : String(r[3]).trim(),
-            quench: String(r[idxS.quench] || '').trim()
+            quench: String(r[idxS.quench] || '').trim(),
+            processo: valProc  // Campo para identificar Pátio/Envio vs Máquinas
         };
 
         // Processar Máquinas (TODOS os registros, estatísticas apenas para parou='sim')
@@ -1155,14 +1156,32 @@ export const calculateParetoData = (rawData, dateRange, filterSelection, aggrega
         const parouSim = (s.parou || '').toLowerCase().includes('sim');
         const bateriaLower = (s.bateria || '').toLowerCase();
         const isJanela = bateriaLower.includes('janela a/b') || bateriaLower.includes('janela c/d');
-        if (!parouSim && !isJanela) return;
+
+        // PÁTIO/ENVIO: incluir se o processo for Pátio/Envio
+        const processoLower = (s.processo || '').toLowerCase();
+        const isPatio = processoLower.includes('patio') || processoLower.includes('pátio') || processoLower.includes('envio');
+
+        // Máquinas: precisa ter parouSim ou isJanela
+        // Pátio: incluir TODOS os registros (ignora coluna "parou produção")
+        if (!isPatio && !parouSim && !isJanela) return;
 
         const areaLower = s.area.toLowerCase();
         const tipoLower = (s.tipo || '').toLowerCase();
         const isMaint = areaLower.includes('manut') || tipoLower.includes('corretiva') || tipoLower.includes('quebra');
 
-        if (lossFilter === 'availability' && !isMaint && !isJanela) return;
-        if (lossFilter === 'performance' && isMaint) return;
+        // Para Pátio: filtrar por Área Responsável (coluna I)
+        // Disponibilidade = Manutenção ou Engenharia
+        // Performance = Operação
+        if (isPatio) {
+            const isDisp = areaLower.includes('manut') || areaLower.includes('engenharia');
+            const isPerf = areaLower.includes('produ') || areaLower.includes('opera');
+            if (lossFilter === 'availability' && !isDisp) return;
+            if (lossFilter === 'performance' && !isPerf) return;
+        } else {
+            // Para Máquinas: aplicar lógica original
+            if (lossFilter === 'availability' && !isMaint && !isJanela) return;
+            if (lossFilter === 'performance' && isMaint) return;
+        }
 
         const equipLabel = s.equip && s.equip !== '' ? s.equip : "Sem Tag";
         if (equipmentFilter && s.equip !== equipmentFilter) return;

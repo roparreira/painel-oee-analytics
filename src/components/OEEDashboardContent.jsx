@@ -310,8 +310,8 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
 
                 {/* ABA 5: CONFIABILIDADE (MOVIDA PARA TREE SUBTAB) */}
                 {activeTab === 'tree' && treeSubTab === 'verification' && (
-                    <div className="h-full overflow-hidden flex flex-col pb-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-6 gap-2 2xl:h-full content-start">
+                    <div className="h-full overflow-y-auto flex flex-col pb-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-6 gap-2 content-start">
                             <div className="col-span-1 md:col-span-2 2xl:col-span-6 mb-1 flex items-center gap-2 mt-2"><div className="h-px bg-slate-300 flex-1"></div><span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Disponibilidade</span><div className="h-px bg-slate-300 flex-1"></div></div>
                             <div className="col-span-1 2xl:col-span-2 h-24"><ComparisonCard title="Manutenção Prog." target={activeAggregates.targetMaintMins / 60} real={(activeAggregates.usedMaintMins) / 60} inverse={true} /></div>
                             <div className="col-span-1 2xl:col-span-2 h-24"><ComparisonCard title="Corretivas / Falhas" target={activeAggregates.loadingMins * (1 - activeTargets.AVAIL / 100) / 60} real={activeAggregates.failLossMins / 60} inverse={true} /></div>
@@ -326,7 +326,7 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
 
                 {/* ABA JANELA: Checklist de Janela (Aderência) + Gráfico de Barras */}
                 {activeTab === 'tree' && treeSubTab === 'janela' && (
-                    <div className="h-full overflow-hidden flex flex-col pb-4">
+                    <div className="h-full overflow-y-auto flex flex-col pb-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-6 gap-2 content-start">
                             {/* Título da seção */}
                             <div className="col-span-1 md:col-span-2 2xl:col-span-6 mb-1 flex items-center gap-2 mt-2 flex-wrap"><div className="h-px bg-slate-300 flex-1 hidden md:block"></div><span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider w-full md:w-auto text-center">Checklist de Janela (Aderência)</span><div className="flex gap-3 ml-2 text-[9px] font-medium border-l pl-2 border-slate-300 text-slate-400 justify-center w-full md:w-auto"><div className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-red-500"></div> &lt; 50%</div><div className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-yellow-500"></div> 50-90%</div><div className="flex items-center gap-1"><div className="w-1.5 h-1.5 rounded-full bg-green-500"></div> &gt; 90%</div></div><div className="h-px bg-slate-300 flex-1 hidden md:block"></div></div>
