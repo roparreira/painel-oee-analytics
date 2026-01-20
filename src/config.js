@@ -134,6 +134,59 @@ const targetQualPctPatio = BUSINESS_CONSTANTS_PATIO.QA_META;
 // 4. OEE Pátio
 const targetOeePctPatio = (targetAvailPctPatio / 100) * (targetPerfPctPatio / 100) * (targetQualPctPatio / 100) * 100;
 
+// --- METAS ESCALONADAS - MÁQUINAS (2025) ---
+// Baseado na aderência planejada às janelas
+export const STEPPED_TARGETS_MAQUINAS = {
+    Q1: { // Jan-Mar (60% aderência)
+        adherence: 0.60,
+        OEE: 46.46,
+        AVAIL: 92.31,
+        PERF: 69.74,
+        QUAL: 72.15
+    },
+    Q2: { // Abr-Jun (70% aderência)
+        adherence: 0.70,
+        OEE: 47.69,
+        AVAIL: 92.11,
+        PERF: 71.76,
+        QUAL: 72.15
+    },
+    H2: { // Jul-Dez (80% aderência)
+        adherence: 0.80,
+        OEE: 48.95,
+        AVAIL: 91.89,
+        PERF: 73.84,
+        QUAL: 72.15
+    }
+};
+
+// --- METAS ESCALONADAS - PÁTIO/ENVIO (2025) ---
+// Baseado na aderência planejada às janelas (40% -> 50% -> 60%)
+// P1: Jan-Mar | P2: Abr-Jul | P3: Ago-Dez
+export const STEPPED_TARGETS_PATIO = {
+    P1: { // Jan-Mar (40% aderência outros dias)
+        adherence: 0.40,
+        OEE: 34.93,
+        AVAIL: 85.3,
+        PERF: 40.9,
+        QUAL: 100
+    },
+    P2: { // Abr-Jul (50% aderência outros dias)
+        adherence: 0.50,
+        OEE: 35.54,
+        AVAIL: 84.7,
+        PERF: 41.9,
+        QUAL: 100
+    },
+    P3: { // Ago-Dez (60% aderência outros dias)
+        adherence: 0.60,
+        OEE: 36.17,
+        AVAIL: 84.2,
+        PERF: 42.9,
+        QUAL: 100
+    }
+};
+
 export const TARGETS_PATIO = {
     OEE: parseFloat(targetOeePctPatio.toFixed(2)),
     AVAIL: parseFloat(targetAvailPctPatio.toFixed(2)),

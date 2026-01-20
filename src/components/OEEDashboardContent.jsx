@@ -99,10 +99,19 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
 
     const activeAggregates = useMemo(() => calculateDashboardAggregates(calculatedData, activeRawData, validatedDateRange, filterSelection, areaMode), [calculatedData, filterSelection, activeRawData, validatedDateRange, areaMode]);
 
-    // Seleciona as metas da área ativa (para Pátio, usa metas dinâmicas se disponíveis)
+    // Seleciona as metas da área ativa (para Pátio e Máquinas, usa metas dinâmicas/escalonadas se disponíveis)
     const activeTargets = useMemo(() => {
-        if (areaMode === 'maquinas') return TARGETS;
-        // Para Pátio, tenta usar metas dinâmicas do patioBridgeMeta
+        if (areaMode === 'maquinas') {
+            const machineTargets = activeAggregates?.steppedMachineTargets;
+            if (machineTargets?.OEE !== undefined) return machineTargets;
+            return TARGETS;
+        }
+
+        // Para Pátio, tenta usar metas escalonadas (steppedPatioTargets) primeiro
+        const patioStepped = activeAggregates?.patioBridgeMeta?.steppedPatioTargets;
+        if (patioStepped?.OEE !== undefined) return patioStepped;
+
+        // Se não houver escalonadas, tenta usar metas dinâmicas (calculadas por dia da semana)
         const dynamicTargets = activeAggregates?.patioBridgeMeta;
         if (dynamicTargets?.targetOEE !== undefined) {
             return {

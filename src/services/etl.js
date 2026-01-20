@@ -2,7 +2,7 @@ import {
     parseDate, getProductionDate, formatDateISO, parseNumber,
     getMinutesInsideWindow, getAggregationKey, formatDateDisplay, formatDuration, dayjs
 } from '../utils';
-import { TARGETS, TARGETS_PATIO, BUSINESS_CONSTANTS, BUSINESS_CONSTANTS_PATIO } from '../config';
+import { TARGETS, TARGETS_PATIO, BUSINESS_CONSTANTS, BUSINESS_CONSTANTS_PATIO, STEPPED_TARGETS_MAQUINAS, STEPPED_TARGETS_PATIO } from '../config';
 
 // --- HELPERS DE REGRESSÃO (Para calcular Beta e Eta) ---
 const calculateLinearRegression = (data) => {
@@ -704,6 +704,76 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
         patioBridgeMeta.targetPE = parseFloat(targetPerfPatio.toFixed(2));
         patioBridgeMeta.targetQA = parseFloat(targetQualPatio.toFixed(2));
         patioBridgeMeta.targetOEE = parseFloat(targetOeePatio.toFixed(2));
+        patioBridgeMeta.targetOEE = parseFloat(targetOeePatio.toFixed(2));
+
+        // ========= PÁTIO: Calcular metas escalonadas (Média Ponderada) =========
+        // P1: Jan-Mar (34.93%) | P2: Abr-Jul (35.54%) | P3: Ago-Dez (36.17%)
+
+        const startDateP = new Date(dateRange.start + 'T12:00:00');
+        const endDateP = new Date(dateRange.end + 'T12:00:00');
+
+        let sumOEE_P = 0, sumAVAIL_P = 0, sumPERF_P = 0, sumQUAL_P = 0;
+        let daysCount_P = 0;
+
+        for (let d = new Date(startDateP); d <= endDateP; d.setDate(d.getDate() + 1)) {
+            const month = d.getMonth(); // 0-11
+            let targetSet = null;
+
+            if (month <= 2) targetSet = STEPPED_TARGETS_PATIO.P1;       // Jan-Mar
+            else if (month <= 6) targetSet = STEPPED_TARGETS_PATIO.P2;  // Abr-Jul (até mês 6 - Julho)
+            else targetSet = STEPPED_TARGETS_PATIO.P3;                  // Ago-Dez
+
+            sumOEE_P += targetSet.OEE;
+            sumAVAIL_P += targetSet.AVAIL;
+            sumPERF_P += targetSet.PERF;
+            sumQUAL_P += targetSet.QUAL;
+            daysCount_P++;
+        }
+
+        if (daysCount_P > 0) {
+            patioBridgeMeta.steppedPatioTargets = {
+                OEE: parseFloat((sumOEE_P / daysCount_P).toFixed(2)),
+                AVAIL: parseFloat((sumAVAIL_P / daysCount_P).toFixed(2)),
+                PERF: parseFloat((sumPERF_P / daysCount_P).toFixed(2)),
+                QUAL: parseFloat((sumQUAL_P / daysCount_P).toFixed(2))
+            };
+        }
+    }
+
+    // ========= MÁQUINAS: Calcular metas escalonadas (Média Ponderada) =========
+    let steppedMachineTargets = null;
+    if (!isPatio) {
+        // Jan-Mar: Q1 (46.46%) | Abr-Jun: Q2 (47.69%) | Jul-Dez: H2 (48.95%)
+
+        const startDate = new Date(dateRange.start + 'T12:00:00');
+        const endDate = new Date(dateRange.end + 'T12:00:00');
+
+        let sumOEE = 0, sumAVAIL = 0, sumPERF = 0, sumQUAL = 0;
+        let daysCount = 0;
+
+        for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+            const month = d.getMonth(); // 0-11
+            let targetSet = null;
+
+            if (month <= 2) targetSet = STEPPED_TARGETS_MAQUINAS.Q1;      // Jan-Mar
+            else if (month <= 5) targetSet = STEPPED_TARGETS_MAQUINAS.Q2; // Abr-Jun
+            else targetSet = STEPPED_TARGETS_MAQUINAS.H2;                 // Jul-Dez
+
+            sumOEE += targetSet.OEE;
+            sumAVAIL += targetSet.AVAIL;
+            sumPERF += targetSet.PERF;
+            sumQUAL += targetSet.QUAL;
+            daysCount++;
+        }
+
+        if (daysCount > 0) {
+            steppedMachineTargets = {
+                OEE: parseFloat((sumOEE / daysCount).toFixed(2)),
+                AVAIL: parseFloat((sumAVAIL / daysCount).toFixed(2)),
+                PERF: parseFloat((sumPERF / daysCount).toFixed(2)),
+                QUAL: parseFloat((sumQUAL / daysCount).toFixed(2))
+            };
+        }
     }
 
     let winStartOkNorte = 0, winStartOkSul = 0;
@@ -924,7 +994,19 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
 
         // ============ BRIDGE CHART PÁTIO ============
         patioBridgeMeta: patioBridgeMeta,
-        patioBridgeReal: patioBridgeReal
+        patioBridgeReal: patioBridgeReal,
+        steppedMachineTargets, // Retorna as metas escalonadas para Máquinas
+        patioWindowStats: {
+            patioDaysWithStop: patioDaysWithStopThursday + patioDaysWithStopOther,
+            patioDaysWithStopThursday,
+            patioDaysWithStopOther,
+            patioInsideOkThursday,
+            patioInsideOkOther,
+            patioStartOkThursday,
+            patioStartOkOther,
+            patioEndOkThursday,
+            patioEndOkOther,
+        }
     };
 };
 
