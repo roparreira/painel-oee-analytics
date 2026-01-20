@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Filter, X, ChevronDown, TrendingDown, Timer, Wrench, Layers, Crosshair, PlayCircle, StopCircle, Percent, Maximize, CalendarX, AlertTriangle, CheckCircle, Clock, LineChart, ScatterChart, LifeBuoy, Info } from 'lucide-react';
+import { Filter, X, ChevronDown, TrendingDown, Timer, Wrench, Layers, Crosshair, PlayCircle, StopCircle, Percent, Maximize, CalendarX, AlertTriangle, CheckCircle, Clock, LineChart, ScatterChart, LifeBuoy, Info, Users } from 'lucide-react';
 import { COLORS, TARGETS, TARGETS_PATIO, BUSINESS_CONSTANTS, BUSINESS_CONSTANTS_PATIO } from '../config';
 import { Card, ComparisonCard, CheckCardDual, CheckCardSingle, MiniDreRow, BigNumberCard, PillarCard } from './UI';
 import CustomJackKnifeChart from '../charts/JackKnifeChart';
@@ -26,6 +26,7 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
     const [filterSelection, setFilterSelection] = useState(null);
     const [lossFilter, setLossFilter] = useState(null);
     const [equipmentFilter, setEquipmentFilter] = useState(null);
+    const [disciplinaFilter, setDisciplinaFilter] = useState(null);
     const [selectedEquipJackKnife, setSelectedEquipJackKnife] = useState(null);
     const [showBridgeExplainer, setShowBridgeExplainer] = useState(false);
     const [showOEEExplainer, setShowOEEExplainer] = useState(false);
@@ -35,6 +36,7 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
     const [weibullEquipmentFilter, setWeibullEquipmentFilter] = useState(null);
     const [treeSubTab, setTreeSubTab] = useState('tree_main'); // tree_main, detailed, verification
     const [weibullPeriodFilters, setWeibullPeriodFilters] = useState([]);
+    const [showWindowRulesInfo, setShowWindowRulesInfo] = useState(false);
 
     // Seleciona os stops e prod da área ativa
     const activeRawData = useMemo(() => ({
@@ -47,6 +49,7 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
     useEffect(() => {
         setFilterSelection(null);
         setEquipmentFilter(null);
+        setDisciplinaFilter(null);
         setSelectedEquipJackKnife(null);
         setWeibullEquipmentFilter(null);
     }, [areaMode]);
@@ -125,7 +128,7 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
     }, [areaMode, activeAggregates]);
     const treeStats = useMemo(() => calculateTreeStats(calculatedData, filterSelection), [calculatedData, filterSelection]);
     const jackKnifeData = useMemo(() => calculateJackKnifeData(activeRawData, validatedDateRange), [activeRawData, validatedDateRange]);
-    const { topEquipmentsData, topCausesData } = useMemo(() => calculateParetoData(activeRawData, validatedDateRange, filterSelection, aggregation, lossFilter, equipmentFilter), [activeRawData, validatedDateRange, filterSelection, aggregation, lossFilter, equipmentFilter]);
+    const { topEquipmentsData, topCausesData, topDisciplinasData } = useMemo(() => calculateParetoData(activeRawData, validatedDateRange, filterSelection, aggregation, lossFilter, equipmentFilter, disciplinaFilter), [activeRawData, validatedDateRange, filterSelection, aggregation, lossFilter, equipmentFilter, disciplinaFilter]);
     const reliabilityTrendData = useMemo(() => {
         return calculateReliabilityTrend(activeRawData, validatedDateRange, aggregation);
     }, [activeRawData, validatedDateRange, aggregation]);
@@ -147,6 +150,7 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
     };
     const toggleLossFilter = (type) => setLossFilter(prev => prev === type ? null : type);
     const handleEquipmentToggle = (equipName) => setEquipmentFilter(prev => prev === equipName ? null : equipName);
+    const handleDisciplinaToggle = (discName) => setDisciplinaFilter(prev => prev === discName ? null : discName);
     const getLocalStatusColor = (val) => { if (val < 50) return COLORS.red; if (val < 90) return COLORS.yellow; return COLORS.green; };
 
     // Smart Date Range Handler: Auto-ordena datas (menor = start, maior = end)
@@ -509,19 +513,177 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                             <div className="p-3 bg-orange-50 border border-orange-100 rounded-xl shadow-sm w-48">
                                 <h4 className="text-[10px] font-bold text-orange-800 mb-2 uppercase tracking-wide">Resultado da Produção</h4>
                                 <div className="flex flex-col gap-2">
-                                    {areaMode === 'maquinas' ? (
-                                        <>
-                                            <div><span className="block text-orange-400 text-[9px] uppercase font-bold">Fornos</span><span className="text-xl font-bold text-slate-700">{activeAggregates.ovensDisplay}</span></div>
-                                            <div className="h-px bg-orange-200 w-full"></div>
-                                            <div><span className="block text-orange-400 text-[9px] uppercase font-bold">Ritmo Médio</span><span className="text-xl font-bold text-slate-700">{activeAggregates.ritmoDisplay} <span className="text-[9px] font-normal text-slate-400">min/u</span></span></div>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <div><span className="block text-orange-400 text-[9px] uppercase font-bold">Volume</span><span className="text-xl font-bold text-slate-700">{activeAggregates.totalWetCharge?.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) || 0} <span className="text-[9px] font-normal text-slate-400">t</span></span></div>
-                                            <div className="h-px bg-orange-200 w-full"></div>
-                                            <div><span className="block text-orange-400 text-[9px] uppercase font-bold">Taxa Média</span><span className="text-xl font-bold text-slate-700">{activeAggregates.patioBridgeReal?.TLIQR?.toFixed(1) || 0} <span className="text-[9px] font-normal text-slate-400">t/h</span></span></div>
-                                        </>
-                                    )}
+                                    {areaMode === 'maquinas' ? (() => {
+                                        // Helper: color based on performance (higher is better)
+                                        const getColorHigher = (actual, target) => {
+                                            if (!target || target === 0) return COLORS.slate;
+                                            const pct = (actual / target) * 100;
+                                            if (pct >= 100) return COLORS.green;
+                                            if (pct >= 90) return COLORS.yellow;
+                                            return COLORS.red;
+                                        };
+                                        // Helper: color based on performance (lower is better)
+                                        const getColorLower = (actual, target) => {
+                                            if (!target || target === 0) return COLORS.slate;
+                                            const pct = (actual / target) * 100;
+                                            if (pct <= 100) return COLORS.green;
+                                            if (pct <= 110) return COLORS.yellow;
+                                            return COLORS.red;
+                                        };
+
+                                        const ovensActual = activeAggregates.ovensNumeric || 0;
+                                        const ovensTarget = activeAggregates.targetOvens || 1;
+                                        const ovensPct = ((ovensActual / ovensTarget) * 100).toFixed(0);
+                                        const colorOvens = getColorHigher(ovensActual, ovensTarget);
+
+                                        const volActual = activeAggregates.totalWetCharge || 0;
+                                        const volTarget = activeAggregates.targetVolume || 1;
+                                        const volPct = ((volActual / volTarget) * 100).toFixed(0);
+                                        const colorVol = getColorHigher(volActual, volTarget);
+
+                                        const ritmoActual = activeAggregates.ritmoMin || 0;
+                                        const ritmoTarget = 18.75;
+                                        const ritmoPct = ritmoTarget > 0 ? ((ritmoActual / ritmoTarget) * 100).toFixed(0) : 0;
+                                        const colorRitmo = getColorLower(ritmoActual, ritmoTarget);
+
+                                        const adherenceActual = activeAggregates.targetMaintMins > 0 ? (activeAggregates.usedMaintMins / activeAggregates.targetMaintMins) * 100 : 0;
+                                        const adherenceTarget = activeAggregates.steppedMachineTargets?.adherence || 60;
+                                        const colorAdherence = getColorHigher(adherenceActual, adherenceTarget);
+
+                                        return (
+                                            <>
+                                                {/* Legenda de Cores */}
+                                                <div className="flex gap-2 text-[7px] mb-1 justify-center">
+                                                    <span className="flex items-center gap-0.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.green }}></span> ≥100%</span>
+                                                    <span className="flex items-center gap-0.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.yellow }}></span> 90-99%</span>
+                                                    <span className="flex items-center gap-0.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.red }}></span> &lt;90%</span>
+                                                </div>
+                                                <div className="h-px bg-orange-200 w-full"></div>
+                                                <div>
+                                                    <span className="block text-orange-400 text-[9px] uppercase font-bold">Fornos</span>
+                                                    <span className="text-xl font-bold" style={{ color: colorOvens }}>{activeAggregates.ovensDisplay}</span>
+                                                    <span className="text-[9px] text-slate-400 ml-1">/ {ovensTarget.toLocaleString('pt-BR')}</span>
+                                                    <span className="text-[8px] text-slate-400 ml-1">({ovensPct}%)</span>
+                                                </div>
+                                                <div className="h-px bg-orange-200 w-full"></div>
+                                                <div>
+                                                    <span className="block text-orange-400 text-[9px] uppercase font-bold">Volume</span>
+                                                    <span className="text-xl font-bold" style={{ color: colorVol }}>{volActual.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} <span className="text-[9px] font-normal text-slate-400">t</span></span>
+                                                    <span className="text-[8px] text-slate-400 ml-1">({volPct}%)</span>
+                                                    <div className="text-[8px] text-slate-500">Meta: {volTarget.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} t</div>
+                                                </div>
+                                                <div className="h-px bg-orange-200 w-full"></div>
+                                                <div>
+                                                    <span className="block text-orange-400 text-[9px] uppercase font-bold">Ritmo Médio</span>
+                                                    <span className="text-xl font-bold" style={{ color: colorRitmo }}>{activeAggregates.ritmoDisplay} <span className="text-[9px] font-normal text-slate-400">min/u</span></span>
+                                                    <span className="text-[8px] text-slate-400 ml-1">({ritmoPct}%)</span>
+                                                    <div className="text-[8px] text-slate-500">Meta: {ritmoTarget.toFixed(2)} min</div>
+                                                </div>
+                                                <div className="h-px bg-orange-200 w-full"></div>
+                                                <div>
+                                                    <div className="flex items-center gap-1">
+                                                        <span className="text-orange-400 text-[9px] uppercase font-bold">Aderência Janela</span>
+                                                        <button
+                                                            className="text-slate-400 hover:text-blue-500 transition-colors"
+                                                            title="Ver regras de aderência"
+                                                            onClick={() => setShowWindowRulesInfo(true)}
+                                                        >
+                                                            <Info size={10} />
+                                                        </button>
+                                                    </div>
+                                                    <span className="text-xl font-bold" style={{ color: colorAdherence }}>
+                                                        {adherenceActual.toFixed(0)}%
+                                                    </span>
+                                                    <span className="text-[9px] text-slate-400 ml-1">/ {adherenceTarget}%</span>
+                                                    <div className="text-[8px] text-slate-500 mt-1">
+                                                        <span className="font-semibold">{(activeAggregates.usedMaintMins / 60).toFixed(1)}h</span> / {(activeAggregates.targetMaintMins / 60).toFixed(0)}h
+                                                        <span className="mx-1">•</span>
+                                                        <span className="font-semibold">{(activeAggregates.daysWithStopNorte || 0) + (activeAggregates.daysWithStopSul || 0)}</span> / {(activeAggregates.totalDays || 0) * 2} jan
+                                                    </div>
+                                                </div>
+                                            </>
+                                        );
+                                    })() : (() => {
+                                        // Helper: color based on performance (higher is better)
+                                        const getColorHigher = (actual, target) => {
+                                            if (!target || target === 0) return COLORS.slate;
+                                            const pct = (actual / target) * 100;
+                                            if (pct >= 100) return COLORS.green;
+                                            if (pct >= 90) return COLORS.yellow;
+                                            return COLORS.red;
+                                        };
+                                        // Helper: color based on performance (lower is better)
+                                        const getColorLower = (actual, target) => {
+                                            if (!target || target === 0) return COLORS.slate;
+                                            const pct = (actual / target) * 100;
+                                            if (pct <= 100) return COLORS.green;
+                                            if (pct <= 110) return COLORS.yellow;
+                                            return COLORS.red;
+                                        };
+
+                                        const volActual = activeAggregates.totalWetCharge || 0;
+                                        const volTarget = activeAggregates.targetVolume || 1;
+                                        const volPct = ((volActual / volTarget) * 100).toFixed(0);
+                                        const colorVol = getColorHigher(volActual, volTarget);
+
+                                        const taxaActual = activeAggregates.patioBridgeReal?.TLIQR || 0;
+                                        const taxaTarget = 301; // TX_META t/h
+                                        const taxaPct = taxaTarget > 0 ? ((taxaActual / taxaTarget) * 100).toFixed(0) : 0;
+                                        const colorTaxa = getColorHigher(taxaActual, taxaTarget);
+
+                                        // Aderência Pátio - Para Pátio usamos os dados de paradas do patioBridgeReal
+                                        // Verificando quantos dias tiveram parada vs total de dias
+                                        const patioDaysTotal = activeAggregates.totalDays || 1;
+                                        const patioDaysWithStop = activeAggregates.patioDaysWithStop || 0;
+                                        const adherenceActualPatio = (patioDaysWithStop / patioDaysTotal) * 100;
+                                        const adherenceTargetPatio = activeAggregates.patioBridgeMeta?.steppedPatioTargets?.adherence || 40;
+                                        const colorAdherencePatio = getColorHigher(adherenceActualPatio, adherenceTargetPatio);
+
+                                        return (
+                                            <>
+                                                {/* Legenda de Cores */}
+                                                <div className="flex gap-2 text-[7px] mb-1 justify-center">
+                                                    <span className="flex items-center gap-0.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.green }}></span> ≥100%</span>
+                                                    <span className="flex items-center gap-0.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.yellow }}></span> 90-99%</span>
+                                                    <span className="flex items-center gap-0.5"><span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.red }}></span> &lt;90%</span>
+                                                </div>
+                                                <div className="h-px bg-orange-200 w-full"></div>
+                                                <div>
+                                                    <span className="block text-orange-400 text-[9px] uppercase font-bold">Volume</span>
+                                                    <span className="text-xl font-bold" style={{ color: colorVol }}>{volActual.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} <span className="text-[9px] font-normal text-slate-400">t</span></span>
+                                                    <span className="text-[8px] text-slate-400 ml-1">({volPct}%)</span>
+                                                    <div className="text-[8px] text-slate-500">Meta: {volTarget.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} t</div>
+                                                </div>
+                                                <div className="h-px bg-orange-200 w-full"></div>
+                                                <div>
+                                                    <span className="block text-orange-400 text-[9px] uppercase font-bold">Taxa Média</span>
+                                                    <span className="text-xl font-bold" style={{ color: colorTaxa }}>{taxaActual.toFixed(1)} <span className="text-[9px] font-normal text-slate-400">t/h</span></span>
+                                                    <span className="text-[8px] text-slate-400 ml-1">({taxaPct}%)</span>
+                                                    <div className="text-[8px] text-slate-500">Meta: {taxaTarget} t/h</div>
+                                                </div>
+                                                <div className="h-px bg-orange-200 w-full"></div>
+                                                <div>
+                                                    <div className="flex items-center gap-1">
+                                                        <span className="text-orange-400 text-[9px] uppercase font-bold">Aderência Janela</span>
+                                                        <button
+                                                            className="text-slate-400 hover:text-blue-500 transition-colors"
+                                                            title="Ver regras de aderência"
+                                                            onClick={() => setShowWindowRulesInfo(true)}
+                                                        >
+                                                            <Info size={10} />
+                                                        </button>
+                                                    </div>
+                                                    <span className="text-xl font-bold" style={{ color: colorAdherencePatio }}>
+                                                        {adherenceActualPatio.toFixed(0)}%
+                                                    </span>
+                                                    <span className="text-[9px] text-slate-400 ml-1">/ {adherenceTargetPatio}%</span>
+                                                    <div className="text-[8px] text-slate-500 mt-1">
+                                                        <span className="font-semibold">{patioDaysWithStop}</span> / {patioDaysTotal} dias c/ parada
+                                                    </div>
+                                                </div>
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                             </div>
                         </div>
@@ -532,7 +694,16 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                                     <>
                                         <div><span className="block text-orange-400 text-[9px] uppercase font-bold">Fornos</span><span className="text-xl font-bold text-slate-700">{activeAggregates.ovensDisplay}</span></div>
                                         <div className="w-px bg-orange-200"></div>
-                                        <div><span className="block text-orange-400 text-[9px] uppercase font-bold">Ritmo Médio</span><span className="text-xl font-bold text-slate-700">{activeAggregates.ritmoDisplay} <span className="text-[9px] font-normal text-slate-400">min/u</span></span></div>
+                                        <div><span className="block text-orange-400 text-[9px] uppercase font-bold">Volume</span><span className="text-xl font-bold text-slate-700">{activeAggregates.totalWetCharge?.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) || 0} <span className="text-[9px] font-normal text-slate-400">t</span></span></div>
+                                        <div className="w-px bg-orange-200"></div>
+                                        <div><span className="block text-orange-400 text-[9px] uppercase font-bold">Ritmo</span><span className="text-xl font-bold text-slate-700">{activeAggregates.ritmoDisplay}</span></div>
+                                        <div className="w-px bg-orange-200"></div>
+                                        <div>
+                                            <span className="block text-orange-400 text-[9px] uppercase font-bold">Janela</span>
+                                            <span className="text-xl font-bold text-slate-700">
+                                                {activeAggregates.targetMaintMins > 0 ? ((activeAggregates.usedMaintMins / activeAggregates.targetMaintMins) * 100).toFixed(0) : 0}%
+                                            </span>
+                                        </div>
                                     </>
                                 ) : (
                                     <>
@@ -560,7 +731,11 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                                                 </button>
                                                 <h3 className="font-bold text-slate-500 uppercase text-xs mb-1">OEE Global</h3>
                                                 <span className="text-4xl font-bold block" style={{ color: colorOee }}>{activeAggregates.oee}%</span>
-                                                <div className="mt-2 pt-2 border-t border-slate-100 text-xs text-slate-400 flex justify-between"><span>Meta: {activeTargets.OEE}%</span><span style={{ color: colorOee }}>{oeeVal >= activeTargets.OEE ? '▲' : '▼'}</span></div>
+                                                <div className="mt-2 pt-2 border-t border-slate-100 text-xs text-slate-400 flex justify-between items-center">
+                                                    <span>Meta: {activeTargets.OEE}%</span>
+                                                    <span className="bg-blue-50 px-2 py-0.5 rounded-full text-gray-500">BSC: {(oeeVal / activeTargets.OEE * 100).toFixed(0)}%</span>
+                                                    <span style={{ color: colorOee }}>{oeeVal >= activeTargets.OEE ? '▲' : '▼'}</span>
+                                                </div>
                                             </Card>
                                             <div className="h-8 w-px bg-slate-300 hidden 2xl:block"></div><div className="h-px bg-slate-300 w-[70%] hidden 2xl:block"></div>
                                         </div>
@@ -632,17 +807,64 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
 
                 {/* ABA 4: PERDAS */}
                 {activeTab === 'losses' && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 grid-rows-none 2xl:grid-rows-2 gap-6 h-full pb-4 auto-rows-auto">
-                        <Card className="col-span-1 md:col-span-2 2xl:col-span-2 2xl:row-span-1 p-4 min-h-[350px]">
-                            <div className="flex justify-between items-center mb-2"><h3 className="font-bold text-slate-700 text-sm">Composição de Perdas (%)</h3><span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-1 rounded">Proporção Disp. vs Perf.</span></div>
-                            <div className="flex-1 min-h-0 h-full"><LossEvolutionChart data={calculatedData} onDrillDown={handleChartDrillDown} selectedKey={filterSelection} selectedType={lossFilter} /></div>
-                        </Card>
-                        <div className="col-span-1 2xl:col-span-1 2xl:row-span-2 flex flex-col gap-4">
-                            <Card className={`flex-1 p-4 flex flex-col transition-all duration-300 min-h-[350px] ${equipmentFilter ? 'ring-2 ring-orange-100' : ''}`}><h3 className="font-bold text-slate-700 text-xs mb-2 flex items-center gap-2"><Wrench size={14} className="text-orange-600" /> {lossFilter === 'availability' ? 'Equipamentos (Disponibilidade)' : lossFilter === 'performance' ? 'Equipamentos (Performance)' : 'Equipamentos (Geral)'}</h3><div className="flex-1 min-h-0"><ParetoChart data={topEquipmentsData} color={lossFilter === 'availability' ? COLORS.blue : lossFilter === 'performance' ? COLORS.yellow : COLORS.darkGray} emptyMessage="Tag de Equipamento não encontrada" onBarClick={handleEquipmentToggle} selectedName={equipmentFilter} /></div><div className="text-[9px] text-center text-gray-400 mt-1 italic">Clique na barra para filtrar por equipamento</div></Card>
-                            <Card className="flex-1 p-4 flex flex-col transition-all duration-300 min-h-[350px]"><h3 className="font-bold text-slate-700 text-xs mb-2 flex items-center gap-2"><Layers size={14} className="text-orange-600" /> {lossFilter === 'availability' ? 'Componente - Modo Falha (Disp.)' : lossFilter === 'performance' ? 'Componente - Modo Falha (Perf.)' : 'Componente - Modo Falha (Geral)'}</h3><div className="flex-1 min-h-0"><ParetoChart data={topCausesData} color={lossFilter === 'availability' ? COLORS.blue : lossFilter === 'performance' ? COLORS.yellow : COLORS.darkGray} emptyMessage={equipmentFilter ? "Nenhuma falha para este equipamento" : "Selecione um equipamento ou período"} /></div></Card>
+                    <div className="flex flex-col gap-6 h-full pb-4">
+                        {/* Linha 1: Cards de Perdas empilhados + Gráfico Composição */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {/* Cards de Perdas empilhados */}
+                            <div className="col-span-1 flex flex-col gap-4">
+                                <Card onClick={() => toggleLossFilter('availability')} className={`flex-1 p-4 border-l-4 flex flex-col relative overflow-hidden transition-all duration-300 min-h-[160px] ${lossFilter === 'availability' ? 'ring-2 ring-blue-500 shadow-md scale-[1.02]' : lossFilter ? 'opacity-50 grayscale-[0.5]' : 'hover:shadow-md hover:scale-[1.01]'}`} style={{ borderLeftColor: COLORS.blue }}>
+                                    <div className="absolute top-0 right-0 p-3 opacity-10"><AlertTriangle size={40} color={COLORS.blue} /></div>
+                                    <h3 className="font-bold text-gray-500 uppercase text-[10px] mb-2 flex items-center gap-2">{lossFilter === 'availability' && <CheckCircle size={12} className="text-blue-600" />} Perdas de Disponibilidade</h3>
+                                    <div className="flex-1 flex flex-col justify-center gap-2">
+                                        <div>
+                                            <span className="text-2xl font-bold block" style={{ color: COLORS.blue }}>{activeAggregates.lossDispH} h</span>
+                                            <span className="text-[10px] text-gray-400">Total Indisponível {equipmentFilter ? `(${equipmentFilter})` : ''}</span>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-1 text-[10px]">
+                                            <div><span className="block font-bold text-slate-700">{activeAggregates.lossFailH} h</span><span className="text-gray-400">Falhas Téc.</span></div>
+                                            <div><span className="block font-bold text-slate-700">{(parseFloat(activeAggregates.lossDispH) - parseFloat(activeAggregates.lossFailH)).toFixed(1)} h</span><span className="text-gray-400">Outros/Ext.</span></div>
+                                        </div>
+                                        <div className="text-[9px]"><span className="text-gray-400">Franquia: </span><span className="font-bold text-slate-600">{((areaMode === 'maquinas' ? 3 : 3) * (activeAggregates.totalDays || 0)).toFixed(0)} h</span></div>
+                                    </div>
+                                    <div className="absolute bottom-1 right-2 text-[8px] text-gray-300 italic">Clique para filtrar</div>
+                                </Card>
+                                <Card onClick={() => toggleLossFilter('performance')} className={`flex-1 p-4 border-l-4 flex flex-col relative overflow-hidden transition-all duration-300 min-h-[160px] ${lossFilter === 'performance' ? 'ring-2 ring-yellow-400 shadow-md scale-[1.02]' : lossFilter ? 'opacity-50 grayscale-[0.5]' : 'hover:shadow-md hover:scale-[1.01]'}`} style={{ borderLeftColor: COLORS.yellow }}>
+                                    <div className="absolute top-0 right-0 p-3 opacity-10"><Clock size={40} color={COLORS.yellow} /></div>
+                                    <h3 className="font-bold text-gray-500 uppercase text-[10px] mb-2 flex items-center gap-2">{lossFilter === 'performance' && <CheckCircle size={12} className="text-yellow-600" />} Perdas de Performance</h3>
+                                    <div className="flex-1 flex flex-col justify-center gap-2">
+                                        <div>
+                                            <span className="text-2xl font-bold block" style={{ color: COLORS.yellow }}>{activeAggregates.lossUtilH} h</span>
+                                            <span className="text-[10px] text-gray-400">Total Perda Ritmo/Ops {equipmentFilter ? `(${equipmentFilter})` : ''}</span>
+                                        </div>
+                                        <div className="text-[9px] text-gray-400 leading-relaxed">Inclui microparadas, redução de velocidade e trocas de turno.</div>
+                                        <div className="text-[9px]"><span className="text-gray-400">Franquia: </span><span className="font-bold text-slate-600">{((areaMode === 'maquinas' ? 2 : 1) * (activeAggregates.totalDays || 0)).toFixed(0)} h</span></div>
+                                    </div>
+                                    <div className="absolute bottom-1 right-2 text-[8px] text-gray-300 italic">Clique para filtrar</div>
+                                </Card>
+                            </div>
+                            {/* Gráfico Composição de Perdas */}
+                            <Card className="col-span-1 md:col-span-2 p-4 min-h-[350px]">
+                                <div className="flex justify-between items-center mb-2"><h3 className="font-bold text-slate-700 text-sm">Composição de Perdas (%)</h3><span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-1 rounded">Proporção Disp. vs Perf.</span></div>
+                                <div className="flex-1 min-h-0 h-full"><LossEvolutionChart data={calculatedData} onDrillDown={handleChartDrillDown} selectedKey={filterSelection} selectedType={lossFilter} /></div>
+                            </Card>
                         </div>
-                        <Card onClick={() => toggleLossFilter('availability')} className={`col-span-1 2xl:col-span-1 2xl:row-span-1 p-5 border-t-4 flex flex-col relative overflow-hidden transition-all duration-300 min-h-[250px] ${lossFilter === 'availability' ? 'ring-2 ring-blue-500 shadow-md scale-[1.02]' : lossFilter ? 'opacity-50 grayscale-[0.5]' : 'hover:shadow-md hover:scale-[1.01]'}`} style={{ borderTopColor: COLORS.blue }}><div className="absolute top-0 right-0 p-4 opacity-10"><AlertTriangle size={60} color={COLORS.blue} /></div><h3 className="font-bold text-gray-500 uppercase text-xs mb-4 flex items-center gap-2">{lossFilter === 'availability' && <CheckCircle size={14} className="text-blue-600" />} Perdas de Disponibilidade</h3><div className="flex-1 flex flex-col justify-center gap-4"><div><span className="text-3xl font-bold block" style={{ color: COLORS.blue }}>{activeAggregates.lossDispH} h</span><span className="text-xs text-gray-400">Total Indisponível {equipmentFilter ? `(${equipmentFilter})` : ''}</span></div><div className="h-px bg-slate-100 w-full"></div><div className="grid grid-cols-2 gap-2 text-xs"><div><span className="block font-bold text-slate-700">{activeAggregates.lossFailH} h</span><span className="text-gray-400">Falhas Téc.</span></div><div><span className="block font-bold text-slate-700">{(parseFloat(activeAggregates.lossDispH) - parseFloat(activeAggregates.lossFailH)).toFixed(1)} h</span><span className="text-gray-400">Outros/Ext.</span></div></div></div><div className="absolute bottom-2 right-2 text-[10px] text-gray-300 italic">Clique para filtrar tipo</div></Card>
-                        <Card onClick={() => toggleLossFilter('performance')} className={`col-span-1 2xl:col-span-1 2xl:row-span-1 p-5 border-t-4 flex flex-col relative overflow-hidden transition-all duration-300 min-h-[250px] ${lossFilter === 'performance' ? 'ring-2 ring-yellow-400 shadow-md scale-[1.02]' : lossFilter ? 'opacity-50 grayscale-[0.5]' : 'hover:shadow-md hover:scale-[1.01]'}`} style={{ borderTopColor: COLORS.yellow }}><div className="absolute top-0 right-0 p-4 opacity-10"><Clock size={60} color={COLORS.yellow} /></div><h3 className="font-bold text-gray-500 uppercase text-xs mb-4 flex items-center gap-2">{lossFilter === 'performance' && <CheckCircle size={14} className="text-yellow-600" />} Perdas de Performance</h3><div className="flex-1 flex flex-col justify-center gap-4"><div><span className="text-3xl font-bold block" style={{ color: COLORS.yellow }}>{activeAggregates.lossUtilH} h</span><span className="text-xs text-gray-400">Total Perda Ritmo/Ops {equipmentFilter ? `(${equipmentFilter})` : ''}</span></div><div className="h-px bg-slate-100 w-full"></div><div className="text-xs text-gray-400 leading-relaxed">Calculado base: Capacidade Teórica - Realizado. Inclui microparadas, redução de velocidade e trocas de turno.</div></div><div className="absolute bottom-2 right-2 text-[10px] text-gray-300 italic">Clique para filtrar tipo</div></Card>
+                        {/* Linha 2: 3 Paretos lado a lado */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <Card className={`p-4 flex flex-col transition-all duration-300 h-[300px] ${disciplinaFilter ? 'ring-2 ring-orange-100' : ''}`}>
+                                <h3 className="font-bold text-slate-700 text-xs mb-2 flex items-center gap-2"><Users size={14} className="text-orange-600" /> {lossFilter === 'availability' ? 'Disciplinas (Disp.)' : lossFilter === 'performance' ? 'Disciplinas (Perf.)' : 'Disciplinas (Geral)'}</h3>
+                                <div className="flex-1 min-h-0 overflow-hidden"><ParetoChart data={topDisciplinasData} color={lossFilter === 'availability' ? COLORS.blue : lossFilter === 'performance' ? COLORS.yellow : COLORS.darkGray} emptyMessage="Nenhuma disciplina encontrada" onBarClick={handleDisciplinaToggle} selectedName={disciplinaFilter} /></div>
+                                <div className="text-[9px] text-center text-gray-400 mt-1 italic">Clique na barra para filtrar</div>
+                            </Card>
+                            <Card className={`p-4 flex flex-col transition-all duration-300 h-[300px] ${equipmentFilter ? 'ring-2 ring-orange-100' : ''}`}>
+                                <h3 className="font-bold text-slate-700 text-xs mb-2 flex items-center gap-2"><Wrench size={14} className="text-orange-600" /> {lossFilter === 'availability' ? 'Equipamentos (Disp.)' : lossFilter === 'performance' ? 'Equipamentos (Perf.)' : 'Equipamentos (Geral)'}</h3>
+                                <div className="flex-1 min-h-0 overflow-hidden"><ParetoChart data={topEquipmentsData} color={lossFilter === 'availability' ? COLORS.blue : lossFilter === 'performance' ? COLORS.yellow : COLORS.darkGray} emptyMessage="Tag de Equipamento não encontrada" onBarClick={handleEquipmentToggle} selectedName={equipmentFilter} /></div>
+                                <div className="text-[9px] text-center text-gray-400 mt-1 italic">Clique na barra para filtrar</div>
+                            </Card>
+                            <Card className="p-4 flex flex-col transition-all duration-300 h-[300px]">
+                                <h3 className="font-bold text-slate-700 text-xs mb-2 flex items-center gap-2"><Layers size={14} className="text-orange-600" /> {lossFilter === 'availability' ? 'Comp. - Modo Falha (Disp.)' : lossFilter === 'performance' ? 'Comp. - Modo Falha (Perf.)' : 'Comp. - Modo Falha (Geral)'}</h3>
+                                <div className="flex-1 min-h-0 overflow-hidden"><ParetoChart data={topCausesData} color={lossFilter === 'availability' ? COLORS.blue : lossFilter === 'performance' ? COLORS.yellow : COLORS.darkGray} emptyMessage={equipmentFilter ? "Nenhuma falha para este equipamento" : "Selecione um equipamento ou período"} /></div>
+                            </Card>
+                        </div>
                     </div>
                 )}
 
@@ -777,6 +999,71 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
             )}
             {showOEEExplainer && (
                 <OEEExplanation aggregates={activeAggregates} areaMode={areaMode} onClose={() => setShowOEEExplainer(false)} />
+            )}
+            {showWindowRulesInfo && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowWindowRulesInfo(false)}>
+                    <div className="bg-white rounded-xl shadow-2xl p-6 max-w-md mx-4" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-bold text-slate-700">Metas de Aderência à Janela</h3>
+                            <button onClick={() => setShowWindowRulesInfo(false)} className="text-slate-400 hover:text-slate-600">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <p className="text-sm text-slate-600 mb-4">
+                            As metas de aderência à janela de manutenção variam conforme o período do ano:
+                        </p>
+                        {areaMode === 'maquinas' ? (
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="border-b border-slate-200">
+                                        <th className="text-left py-2 font-bold text-slate-600">Período</th>
+                                        <th className="text-right py-2 font-bold text-slate-600">Meta (Máquinas)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr className="border-b border-slate-100">
+                                        <td className="py-2 text-slate-700">Janeiro - Março</td>
+                                        <td className="py-2 text-right font-bold text-blue-600">60%</td>
+                                    </tr>
+                                    <tr className="border-b border-slate-100">
+                                        <td className="py-2 text-slate-700">Abril - Junho</td>
+                                        <td className="py-2 text-right font-bold text-blue-600">70%</td>
+                                    </tr>
+                                    <tr>
+                                        <td className="py-2 text-slate-700">Julho - Dezembro</td>
+                                        <td className="py-2 text-right font-bold text-blue-600">80%</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        ) : (
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="border-b border-slate-200">
+                                        <th className="text-left py-2 font-bold text-slate-600">Período</th>
+                                        <th className="text-right py-2 font-bold text-slate-600">Meta (Pátio)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr className="border-b border-slate-100">
+                                        <td className="py-2 text-slate-700">Janeiro - Março</td>
+                                        <td className="py-2 text-right font-bold text-orange-600">40%</td>
+                                    </tr>
+                                    <tr className="border-b border-slate-100">
+                                        <td className="py-2 text-slate-700">Abril - Julho</td>
+                                        <td className="py-2 text-right font-bold text-orange-600">50%</td>
+                                    </tr>
+                                    <tr>
+                                        <td className="py-2 text-slate-700">Agosto - Dezembro</td>
+                                        <td className="py-2 text-right font-bold text-orange-600">60%</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        )}
+                        <p className="text-xs text-slate-500 mt-4">
+                            Para períodos que cruzam múltiplos trimestres, a meta é calculada como média ponderada pelos dias.
+                        </p>
+                    </div>
+                </div>
             )}
         </div>
     );

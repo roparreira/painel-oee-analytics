@@ -69,7 +69,8 @@ export const processFiles = async (fileStop, fileProd, fileDespacho = null) => {
         modo: headStop.findIndex(h => h.includes('modo') || h.includes('desvio') || h.includes('falha')),
         bateria: headStop.findIndex(h => h.includes('bateria') || h.includes('local') || h.includes('área executante')),
         quench: headStop.findIndex(h => h.includes('quench')),
-        dataProd: headStop.findIndex(h => h.includes('data de produção') || h.includes('data de producao')) // Coluna Z
+        dataProd: headStop.findIndex(h => h.includes('data de produção') || h.includes('data de producao')), // Coluna Z
+        disciplina: headStop.findIndex(h => h.includes('disciplina')) // Coluna R
     };
     if (idxS.quench === -1) idxS.quench = 5;
     if (idxS.dataProd === -1) idxS.dataProd = 25; // Coluna Z = índice 25
@@ -128,7 +129,8 @@ export const processFiles = async (fileStop, fileProd, fileDespacho = null) => {
             parou: valParou,
             bateria: (idxS.bateria > -1) ? String(r[idxS.bateria] || '').trim() : String(r[3]).trim(),
             quench: String(r[idxS.quench] || '').trim(),
-            processo: valProc  // Campo para identificar Pátio/Envio vs Máquinas
+            processo: valProc,  // Campo para identificar Pátio/Envio vs Máquinas
+            disciplina: (idxS.disciplina > -1) ? String(r[idxS.disciplina] || '').trim() : ''
         };
 
         // Processar Máquinas (TODOS os registros, estatísticas apenas para parou='sim')
@@ -748,7 +750,7 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
         const startDate = new Date(dateRange.start + 'T12:00:00');
         const endDate = new Date(dateRange.end + 'T12:00:00');
 
-        let sumOEE = 0, sumAVAIL = 0, sumPERF = 0, sumQUAL = 0;
+        let sumOEE = 0, sumAVAIL = 0, sumPERF = 0, sumQUAL = 0, sumAdherence = 0;
         let daysCount = 0;
 
         for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
@@ -763,6 +765,7 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
             sumAVAIL += targetSet.AVAIL;
             sumPERF += targetSet.PERF;
             sumQUAL += targetSet.QUAL;
+            sumAdherence += targetSet.adherence;
             daysCount++;
         }
 
@@ -771,7 +774,8 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
                 OEE: parseFloat((sumOEE / daysCount).toFixed(2)),
                 AVAIL: parseFloat((sumAVAIL / daysCount).toFixed(2)),
                 PERF: parseFloat((sumPERF / daysCount).toFixed(2)),
-                QUAL: parseFloat((sumQUAL / daysCount).toFixed(2))
+                QUAL: parseFloat((sumQUAL / daysCount).toFixed(2)),
+                adherence: parseFloat((sumAdherence / daysCount * 100).toFixed(0)) // Como percentual (60, 70, 80)
             };
         }
     }
@@ -919,6 +923,7 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
         ovensNumeric: totalOvens,
         ovensDisplay: totalOvens.toLocaleString('pt-BR'),
         targetOvens: targetOvens,
+        targetVolume: isPatio ? (BC.VOL_META * totalDays) : (BUSINESS_CONSTANTS.FN_META * BUSINESS_CONSTANTS.VOL_META * totalDays),
         lossDispH: (sum('lossDisp') / 60).toFixed(1),
         lossUtilH: (sum('lossUtil') / 60).toFixed(1),
         lossFailH: (sum('failureLoss') / 60).toFixed(1),
@@ -1251,9 +1256,9 @@ export const calculateWeibullData = (rawData, equipmentFilter) => {
     };
 };
 
-export const calculateParetoData = (rawData, dateRange, filterSelection, aggregation, lossFilter, equipmentFilter) => {
+export const calculateParetoData = (rawData, dateRange, filterSelection, aggregation, lossFilter, equipmentFilter, disciplinaFilter) => {
     // [CÓDIGO calculateParetoData COMPLETO]
-    if (!rawData.stops || rawData.stops.length === 0) return { topEquipmentsData: [], topCausesData: [] };
+    if (!rawData.stops || rawData.stops.length === 0) return { topEquipmentsData: [], topCausesData: [], topDisciplinasData: [] };
     const activeStops = rawData.stops.filter(s => {
         if (s.dateStr < dateRange.start || s.dateStr > dateRange.end) return false;
         if (filterSelection && s.dateStr !== filterSelection && getAggregationKey(s.dateStr, aggregation).key !== filterSelection) return false;
@@ -1262,6 +1267,7 @@ export const calculateParetoData = (rawData, dateRange, filterSelection, aggrega
 
     const reasonsEquip = {};
     const reasonsCause = {};
+    const reasonsDisciplina = {};
 
     activeStops.forEach(s => {
         const parouSim = (s.parou || '').toLowerCase().includes('sim');
@@ -1294,10 +1300,15 @@ export const calculateParetoData = (rawData, dateRange, filterSelection, aggrega
             if (lossFilter === 'performance' && isMaint) return;
         }
 
+        // Filtros interativos de equipamento e disciplina
         const equipLabel = s.equip && s.equip !== '' ? s.equip : "Sem Tag";
+        const disciplinaLabel = s.disciplina && s.disciplina !== '' ? s.disciplina : "Sem Disciplina";
+
         if (equipmentFilter && s.equip !== equipmentFilter) return;
+        if (disciplinaFilter && disciplinaLabel !== disciplinaFilter) return;
 
         reasonsEquip[equipLabel] = (reasonsEquip[equipLabel] || 0) + s.duration;
+        reasonsDisciplina[disciplinaLabel] = (reasonsDisciplina[disciplinaLabel] || 0) + s.duration;
 
         let causeLabel = "Não identificado";
         if (s.comp || s.modo) causeLabel = `${s.comp || '?'} - ${s.modo || '?'}`;
@@ -1311,7 +1322,7 @@ export const calculateParetoData = (rawData, dateRange, filterSelection, aggrega
         .map(([name, value]) => ({ name, value: Math.round(value) }))
         .sort((a, b) => b.value - a.value).slice(0, 10);
 
-    return { topEquipmentsData: processPareto(reasonsEquip), topCausesData: processPareto(reasonsCause) };
+    return { topEquipmentsData: processPareto(reasonsEquip), topCausesData: processPareto(reasonsCause), topDisciplinasData: processPareto(reasonsDisciplina) };
 };
 
 export const calculateWindowHoursData = (rawData, dateRange, aggregation) => {
