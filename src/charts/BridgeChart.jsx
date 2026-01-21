@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, CartesianGrid, Tooltip, Cell, LabelList, ReferenceLine } from 'recharts';
-import { COLORS, TARGETS, BUSINESS_CONSTANTS_PATIO } from '../config';
+import { COLORS, TARGETS, BUSINESS_CONSTANTS_PATIO, BUSINESS_CONSTANTS_RECEBIMENTO } from '../config';
 
 const BridgeLabel = (props) => {
     const { x, y, width, value, index, data, isPatio } = props;
@@ -33,7 +33,7 @@ const BridgeLabel = (props) => {
 const BridgeChart = memo(({ aggregates, areaMode = 'maquinas' }) => {
     if (!aggregates) return <div className="flex items-center justify-center h-full text-xs text-gray-400">Carregando dados...</div>;
 
-    const isPatio = areaMode === 'patio';
+    const isPatio = areaMode === 'patio' || areaMode === 'recebimento';
     const unit = isPatio ? 'ton' : 'fornos';
 
     let meta, actual, data;
@@ -46,7 +46,8 @@ const BridgeChart = memo(({ aggregates, areaMode = 'maquinas' }) => {
         if (!bm.VM || !br.VR) {
             // Fallback para lógica antiga se não houver dados
             const totalDays = aggregates.totalDays || 1;
-            meta = Math.round(BUSINESS_CONSTANTS_PATIO.VOL_META * totalDays);
+            const BC = areaMode === 'recebimento' ? BUSINESS_CONSTANTS_RECEBIMENTO : BUSINESS_CONSTANTS_PATIO;
+            meta = Math.round(BC.VOL_META * totalDays);
             actual = Math.round(aggregates.totalWetCharge || 0);
             data = [
                 { name: 'Meta', base: 0, value: meta, label: meta, isTotal: true, type: 'start' },

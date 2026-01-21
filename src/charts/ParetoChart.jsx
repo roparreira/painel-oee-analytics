@@ -23,7 +23,7 @@ const ParetoChart = memo(({ data, color, emptyMessage = "Sem dados", onBarClick,
         <Tooltip cursor={{ fill: 'rgba(0,0,0,0.03)' }} contentStyle={{ fontSize: '11px', borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', padding: '8px' }} formatter={(val, name, props) => [`${props.payload.value} min (${props.payload.pct}%)`, 'Duração']} />
         <Bar dataKey="value" barSize={14} radius={[0, 4, 4, 0]} cursor="pointer" onClick={(e) => { if (e && onBarClick) { onBarClick(e.name); } }}>
           {dataWithPct.map((entry, index) => {
-            const isSelected = selectedName ? entry.name === selectedName : true;
+            const isSelected = selectedName ? (Array.isArray(selectedName) ? selectedName.includes(entry.name) : entry.name === selectedName) : true;
             return (<Cell key={`cell-${index}`} fill={color || COLORS.orange} opacity={isSelected ? 1 : 0.3} />);
           })}
           {/* Label de minutos na extremidade externa (direita) */}

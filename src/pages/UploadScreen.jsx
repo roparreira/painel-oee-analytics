@@ -5,7 +5,7 @@ import { COLORS } from '../config';
 import { processFiles } from '../services/etl';
 
 export default function UploadScreen({ onDataReady }) {
-    const [files, setFiles] = useState({ stop: null, prod: null, despacho: null });
+    const [files, setFiles] = useState({ stop: null, prod: null, despacho: null, recebimento: null });
     const [loading, setLoading] = useState(false);
     const [errorLog, setErrorLog] = useState("");
 
@@ -36,7 +36,7 @@ export default function UploadScreen({ onDataReady }) {
         if (!files.stop || !files.prod) return alert("Selecione os arquivos obrigatórios.");
         setLoading(true); setErrorLog("");
         try {
-            const result = await processFiles(files.stop, files.prod, files.despacho);
+            const result = await processFiles(files.stop, files.prod, files.despacho, files.recebimento);
             onDataReady(result);
         } catch (e) { console.error(e); setErrorLog(e.message); } finally { setLoading(false); }
     };
@@ -47,7 +47,7 @@ export default function UploadScreen({ onDataReady }) {
                 <h2 className="text-lg font-bold mb-8 flex items-center gap-2 text-slate-700">
                     <Database className="text-orange-600" /> Carregar dados
                 </h2>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
 
                     {/* GPMW (Apontamentos) - Obrigatório */}
                     <div className="relative border-2 border-dashed border-slate-200 rounded-xl p-6 text-center hover:bg-slate-50 hover:border-orange-400 transition-all group cursor-pointer">
@@ -91,7 +91,17 @@ export default function UploadScreen({ onDataReady }) {
                         <p className="font-bold text-sm text-slate-700">Totalizador Despacho</p>
                         <p className="text-xs text-slate-400 mt-1">{files.despacho ? files.despacho.name : "Arraste ou clique"}</p>
                         {files.despacho && <div className="mt-2 text-xs font-bold text-green-600 flex justify-center items-center gap-1"><CheckCircle size={12} /> {autoLoaded ? "Sincronizado via Robô" : "Carregado"}</div>}
-                        <div className="mt-2 text-[10px] text-slate-400 italic">Opcional (Pátio/Envio)</div>
+                        <div className="mt-2 text-[10px] text-slate-400 italic">Opcional (Envio)</div>
+                    </div>
+
+                    {/* Totalizado Recebimento (Pátio/Recebimento) - Opcional */}
+                    <div className="relative border-2 border-dashed border-slate-200 rounded-xl p-6 text-center hover:bg-slate-50 hover:border-blue-400 transition-all group cursor-pointer">
+                        <input type="file" className="absolute inset-0 opacity-0 cursor-pointer z-10" accept=".xlsx,.xlsm" onChange={e => setFiles(prev => ({ ...prev, recebimento: e.target.files[0] }))} />
+                        <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform"><Database style={{ color: COLORS.blue }} /></div>
+                        <p className="font-bold text-sm text-slate-700">Totalizado Recebimento</p>
+                        <p className="text-xs text-slate-400 mt-1">{files.recebimento ? files.recebimento.name : "Arraste ou clique"}</p>
+                        {files.recebimento && <div className="mt-2 text-xs font-bold text-green-600 flex justify-center items-center gap-1"><CheckCircle size={12} /> Carregado</div>}
+                        <div className="mt-2 text-[10px] text-slate-400 italic">Opcional (Recebimento)</div>
                     </div>
                 </div>
 

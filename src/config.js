@@ -56,6 +56,34 @@ export const BUSINESS_CONSTANTS_PATIO = {
     SL_META: 5.5       // Schedule Loss médio (usado apenas como fallback)
 };
 
+// --- CONSTANTES DE NEGÓCIO - RECEBIMENTO ---
+export const BUSINESS_CONSTANTS_RECEBIMENTO = {
+    // TEMPO (Horas)
+    TC_META: 24,       // Tempo Calendário (24h por dia)
+
+    // PARADAS PROGRAMADAS (varia por dia da semana)
+    PPM_THURSDAY: 8,   // Quinta-feira: 8h (mesma lógica que Envio)
+    PPM_OTHER: 4,      // Outros dias: 4h
+    TTM: 3,            // Troca de Turno Meta: 3h por dia
+
+    // FRANQUIAS
+    PNPM: 3,           // Paradas Não Programadas Meta: 3h por dia
+    POM: 1,            // Perda Operacional Meta: 1h por dia
+
+    // PRODUÇÃO FÍSICA / TAXA
+    VOL_META: 6450,    // Volume Meta (toneladas por dia)
+    TX_META: 550.2,    // Taxa Meta (t/h) - referência
+    TX_THEORY: 800,    // Taxa Teórica (t/h) - Capacidade Máxima
+
+    // QUALIDADE (sempre 100% para Recebimento)
+    QA_META: 100,      // Yield (%)
+
+    // Compatibilidade com código (Franquias para cards de perdas)
+    CO_META: 3,        // = PNPM (Disponibilidade)
+    STP_META: 1,       // = POM (Performance)
+    SL_META: 7         // Schedule Loss médio (PPM_OTHER + TTM = 4+3)
+};
+
 // --- CÁLCULO DE METAS (TARGETS) ---
 // Derivadas matematicamente das constantes acima para consistência total com o ETL
 
@@ -192,6 +220,56 @@ export const TARGETS_PATIO = {
     AVAIL: parseFloat(targetAvailPctPatio.toFixed(2)),
     PERF: parseFloat(targetPerfPctPatio.toFixed(2)),
     QUAL: parseFloat(targetQualPctPatio.toFixed(2))
+};
+
+// --- CÁLCULO DE METAS - RECEBIMENTO ---
+// Para Recebimento, usa fórmula ADTX (Aderência a Taxa) igual Envio
+const loadingTimeMetaReceb = BUSINESS_CONSTANTS_RECEBIMENTO.TC_META - BUSINESS_CONSTANTS_RECEBIMENTO.SL_META; // 24 - 7 = 17h
+const operatingTimeMetaReceb = loadingTimeMetaReceb - BUSINESS_CONSTANTS_RECEBIMENTO.CO_META; // 17 - 3 = 14h
+const targetAvailPctReceb = (operatingTimeMetaReceb / loadingTimeMetaReceb) * 100; // ~82.35%
+
+// Performance Recebimento
+const targetAVOLReceb = 1;
+const netOperatingTimeMetaReceb = operatingTimeMetaReceb - BUSINESS_CONSTANTS_RECEBIMENTO.STP_META; // 14 - 1 = 13h
+const targetUFReceb = netOperatingTimeMetaReceb / operatingTimeMetaReceb; // 13/14 = 0.9286
+// ADTX (Aderência à Taxa) = Taxa Meta / Taxa Teórica (Capacidade)
+const targetADTXReceb = BUSINESS_CONSTANTS_RECEBIMENTO.TX_META / BUSINESS_CONSTANTS_RECEBIMENTO.TX_THEORY; // 550.2 / 800 = 0.68775
+const targetPerfPctReceb = (targetAVOLReceb * targetUFReceb * targetADTXReceb) * 100; // ~63.86%
+
+const targetQualPctReceb = BUSINESS_CONSTANTS_RECEBIMENTO.QA_META;
+const targetOeePctReceb = (targetAvailPctReceb / 100) * (targetPerfPctReceb / 100) * (targetQualPctReceb / 100) * 100;
+
+export const TARGETS_RECEBIMENTO = {
+    OEE: parseFloat(targetOeePctReceb.toFixed(2)),
+    AVAIL: parseFloat(targetAvailPctReceb.toFixed(2)),
+    PERF: parseFloat(targetPerfPctReceb.toFixed(2)),
+    QUAL: parseFloat(targetQualPctReceb.toFixed(2))
+};
+
+// --- METAS ESCALONADAS - RECEBIMENTO (2025) ---
+// Igual a Envio: 40% -> 50% -> 60%
+export const STEPPED_TARGETS_RECEBIMENTO = {
+    P1: { // Jan-Mar (40% aderência)
+        adherence: 0.40,
+        OEE: parseFloat(targetOeePctReceb.toFixed(2)),
+        AVAIL: parseFloat(targetAvailPctReceb.toFixed(2)),
+        PERF: parseFloat(targetPerfPctReceb.toFixed(2)),
+        QUAL: 100
+    },
+    P2: { // Abr-Jul (50% aderência)
+        adherence: 0.50,
+        OEE: parseFloat(targetOeePctReceb.toFixed(2)),
+        AVAIL: parseFloat(targetAvailPctReceb.toFixed(2)),
+        PERF: parseFloat(targetPerfPctReceb.toFixed(2)),
+        QUAL: 100
+    },
+    P3: { // Ago-Dez (60% aderência)
+        adherence: 0.60,
+        OEE: parseFloat(targetOeePctReceb.toFixed(2)),
+        AVAIL: parseFloat(targetAvailPctReceb.toFixed(2)),
+        PERF: parseFloat(targetPerfPctReceb.toFixed(2)),
+        QUAL: 100
+    }
 };
 
 // --- PALETA DE CORES ---

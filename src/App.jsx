@@ -9,11 +9,11 @@ import DashboardScreen from './pages/DashboardScreen';
 
 export default function App() {
   const [step, setStep] = useState('upload');
-  const [rawData, setRawData] = useState({ stops: [], stopsPatio: [], prod: {}, prodPatio: {} });
+  const [rawData, setRawData] = useState({ stops: [], stopsPatio: [], stopsRecebimento: [], prod: {}, prodPatio: {}, prodRecebimento: {} });
   const [auditStats, setAuditStats] = useState(null);
   const [ignoredLog, setIgnoredLog] = useState([]);
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
-  const [areaMode, setAreaMode] = useState('maquinas'); // 'maquinas' ou 'patio'
+  const [areaMode, setAreaMode] = useState('maquinas'); // 'maquinas', 'patio' ou 'recebimento'
 
   // Injeção XLSX
   useEffect(() => {
@@ -30,8 +30,10 @@ export default function App() {
     setRawData({
       stops: result.stops,
       stopsPatio: result.stopsPatio,
+      stopsRecebimento: result.stopsRecebimento || [],
       prod: result.prod,
-      prodPatio: result.prodPatio || {}
+      prodPatio: result.prodPatio || {},
+      prodRecebimento: result.prodRecebimento || {}
     });
     setAuditStats(result.auditStats);
     setIgnoredLog(result.ignored);
@@ -58,7 +60,7 @@ export default function App() {
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-orange-500 text-white shadow-md shadow-orange-200"><Activity size={20} /></div>
-            <div><h1 className="text-xl font-bold tracking-tight text-slate-800 leading-none">Portal OEE <span className="text-orange-500 font-light">Analytics</span></h1><p className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wide">Heat Recovery System • {areaMode === 'maquinas' ? 'Máquinas' : 'Pátio/Envio'}</p><p className="text-[10px] text-orange-500 font-bold mt-0.5 uppercase tracking-wide">ENGENHARIA DE CONFIABILIDADE</p></div>
+            <div><h1 className="text-xl font-bold tracking-tight text-slate-800 leading-none">Portal OEE <span className="text-orange-500 font-light">Analytics</span></h1><p className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wide">Heat Recovery System • {areaMode === 'maquinas' ? 'Máquinas' : areaMode === 'patio' ? 'Envio' : 'Recebimento'}</p><p className="text-[10px] text-orange-500 font-bold mt-0.5 uppercase tracking-wide">ENGENHARIA DE CONFIABILIDADE</p></div>
           </div>
         </div>
       </header>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Filter, X, ChevronDown, TrendingDown, Timer, Wrench, Layers, Crosshair, PlayCircle, StopCircle, Percent, Maximize, CalendarX, AlertTriangle, CheckCircle, Clock, LineChart, ScatterChart, LifeBuoy, Info, Users } from 'lucide-react';
-import { COLORS, TARGETS, TARGETS_PATIO, BUSINESS_CONSTANTS, BUSINESS_CONSTANTS_PATIO } from '../config';
+import { COLORS, TARGETS, TARGETS_PATIO, TARGETS_RECEBIMENTO, BUSINESS_CONSTANTS, BUSINESS_CONSTANTS_PATIO, BUSINESS_CONSTANTS_RECEBIMENTO } from '../config';
 import { Card, ComparisonCard, CheckCardDual, CheckCardSingle, MiniDreRow, BigNumberCard, PillarCard } from './UI';
 import CustomJackKnifeChart from '../charts/JackKnifeChart';
 import ParetoChart from '../charts/ParetoChart';
@@ -11,6 +11,7 @@ import LossEvolutionChart from '../charts/LossEvolutionChart';
 import ReliabilityTrendChart from '../charts/ReliabilityTrendChart';
 import WeibullChart from '../charts/WeibullChart';
 import WindowHoursChart from '../charts/WindowHoursChart';
+import AvailabilityCausesChart from '../charts/AvailabilityCausesChart';
 import { calculateOEEData, calculateDashboardAggregates, calculateTreeStats, calculateJackKnifeData, calculateParetoData, calculateReliabilityTrend, calculateWeibullData, calculateWindowHoursData } from '../services/etl';
 import { formatDateISO } from '../utils';
 import BridgeChartExplanation from './BridgeChartExplanation';
@@ -19,7 +20,7 @@ import OEEExplanation from './OEEExplanation';
 export default function OEEDashboardContent({ rawData, initialDateRange, areaMode, setAreaMode, activeTab = 'overview', setActiveTab }) {
     // activeTab is now received from props (controlled by Sidebar)
     const [activeReliabilitySubTab, setActiveReliabilitySubTab] = useState('weibull');
-    const [aggregation, setAggregation] = useState('month');
+    const [aggregation, setAggregation] = useState('day');
     const [dateRange, setDateRange] = useState(initialDateRange);
     const [validatedDateRange, setValidatedDateRange] = useState(initialDateRange); // Estado validado para cálculos
 
@@ -27,6 +28,7 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
     const [lossFilter, setLossFilter] = useState(null);
     const [equipmentFilter, setEquipmentFilter] = useState(null);
     const [disciplinaFilter, setDisciplinaFilter] = useState(null);
+    const [causeFilter, setCauseFilter] = useState(null);
     const [selectedEquipJackKnife, setSelectedEquipJackKnife] = useState(null);
     const [showBridgeExplainer, setShowBridgeExplainer] = useState(false);
     const [showOEEExplainer, setShowOEEExplainer] = useState(false);
@@ -35,14 +37,20 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
 
     const [weibullEquipmentFilter, setWeibullEquipmentFilter] = useState(null);
     const [treeSubTab, setTreeSubTab] = useState('tree_main'); // tree_main, detailed, verification
+    const [lossesSubTab, setLossesSubTab] = useState('overview'); // overview, availability
     const [weibullPeriodFilters, setWeibullPeriodFilters] = useState([]);
     const [showWindowRulesInfo, setShowWindowRulesInfo] = useState(false);
 
     // Seleciona os stops e prod da área ativa
-    const activeRawData = useMemo(() => ({
-        stops: areaMode === 'maquinas' ? rawData.stops : rawData.stopsPatio,
-        prod: areaMode === 'maquinas' ? rawData.prod : rawData.prodPatio
-    }), [areaMode, rawData]);
+    const activeRawData = useMemo(() => {
+        if (areaMode === 'maquinas') {
+            return { stops: rawData.stops, prod: rawData.prod };
+        } else if (areaMode === 'recebimento') {
+            return { stops: rawData.stopsRecebimento, prod: rawData.prodRecebimento || {} };
+        } else {
+            return { stops: rawData.stopsPatio, prod: rawData.prodPatio };
+        }
+    }, [areaMode, rawData]);
 
 
     // Limpa filtros ao trocar de área
@@ -50,6 +58,7 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
         setFilterSelection(null);
         setEquipmentFilter(null);
         setDisciplinaFilter(null);
+        setCauseFilter(null);
         setSelectedEquipJackKnife(null);
         setWeibullEquipmentFilter(null);
     }, [areaMode]);
@@ -86,9 +95,9 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
             return;
         }
 
-        const results = calculateOEEData(activeRawData, validatedDateRange, aggregation, equipmentFilter, areaMode);
+        const results = calculateOEEData(activeRawData, validatedDateRange, aggregation, equipmentFilter, disciplinaFilter, causeFilter, areaMode);
         setCalculatedData(results);
-    }, [validatedDateRange, aggregation, equipmentFilter, activeRawData, areaMode]);
+    }, [validatedDateRange, aggregation, equipmentFilter, disciplinaFilter, causeFilter, activeRawData, areaMode]);
 
     const availableEquipments = useMemo(() => {
         const uniqueEquips = new Set(activeRawData.stops
@@ -100,7 +109,20 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
     const periodOptions = calculatedData.map(d => ({ label: d.label, key: d.key }));
 
 
-    const activeAggregates = useMemo(() => calculateDashboardAggregates(calculatedData, activeRawData, validatedDateRange, filterSelection, areaMode), [calculatedData, filterSelection, activeRawData, validatedDateRange, areaMode]);
+    const activeAggregates = useMemo(() => {
+        if (!calculatedData || calculatedData.length === 0) return null;
+
+        // Se houver seleção de barra (dia/mês), filtrar
+        let dataToAggregate = calculatedData;
+        if (filterSelection) {
+            if (Array.isArray(filterSelection)) {
+                dataToAggregate = calculatedData.filter(d => filterSelection.includes(d.key));
+            } else {
+                dataToAggregate = calculatedData.filter(d => d.key === filterSelection);
+            }
+        }
+        return calculateDashboardAggregates(dataToAggregate, activeRawData, validatedDateRange, filterSelection, areaMode);
+    }, [calculatedData, filterSelection, activeRawData, validatedDateRange, areaMode]);
 
     // Seleciona as metas da área ativa (para Pátio e Máquinas, usa metas dinâmicas/escalonadas se disponíveis)
     const activeTargets = useMemo(() => {
@@ -110,7 +132,14 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
             return TARGETS;
         }
 
-        // Para Pátio, tenta usar metas escalonadas (steppedPatioTargets) primeiro
+        // Para Recebimento, usa TARGETS_RECEBIMENTO (mesmas metas escalonadas de Pátio por enquanto)
+        if (areaMode === 'recebimento') {
+            const patioStepped = activeAggregates?.patioBridgeMeta?.steppedPatioTargets;
+            if (patioStepped?.OEE !== undefined) return patioStepped;
+            return TARGETS_RECEBIMENTO;
+        }
+
+        // Para Pátio/Envio, tenta usar metas escalonadas (steppedPatioTargets) primeiro
         const patioStepped = activeAggregates?.patioBridgeMeta?.steppedPatioTargets;
         if (patioStepped?.OEE !== undefined) return patioStepped;
 
@@ -128,7 +157,19 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
     }, [areaMode, activeAggregates]);
     const treeStats = useMemo(() => calculateTreeStats(calculatedData, filterSelection), [calculatedData, filterSelection]);
     const jackKnifeData = useMemo(() => calculateJackKnifeData(activeRawData, validatedDateRange), [activeRawData, validatedDateRange]);
-    const { topEquipmentsData, topCausesData, topDisciplinasData } = useMemo(() => calculateParetoData(activeRawData, validatedDateRange, filterSelection, aggregation, lossFilter, equipmentFilter, disciplinaFilter), [activeRawData, validatedDateRange, filterSelection, aggregation, lossFilter, equipmentFilter, disciplinaFilter]);
+    // Pareto Decoupling Logic for Global Filtering
+    // 1. Equipment Pareto: Shows ALL equipments (ignore equipmentFilter), but respects Discipline & Cause filters
+    const paretoEquipmentsRes = useMemo(() => calculateParetoData(activeRawData, validatedDateRange, filterSelection, aggregation, lossFilter, null, disciplinaFilter, causeFilter), [activeRawData, validatedDateRange, filterSelection, aggregation, lossFilter, disciplinaFilter, causeFilter]);
+
+    // 2. Discipline Pareto: Shows ALL disciplines (ignore disciplinaFilter), but respects Equipment & Cause filters
+    const paretoDisciplinasRes = useMemo(() => calculateParetoData(activeRawData, validatedDateRange, filterSelection, aggregation, lossFilter, equipmentFilter, null, causeFilter), [activeRawData, validatedDateRange, filterSelection, aggregation, lossFilter, equipmentFilter, causeFilter]);
+
+    // 3. Causes Pareto: Shows ALL causes (ignore causeFilter), but respects Equipment & Discipline filters
+    const paretoCausesRes = useMemo(() => calculateParetoData(activeRawData, validatedDateRange, filterSelection, aggregation, lossFilter, equipmentFilter, disciplinaFilter, null), [activeRawData, validatedDateRange, filterSelection, aggregation, lossFilter, equipmentFilter, disciplinaFilter]);
+
+    const topEquipmentsData = paretoEquipmentsRes.topEquipmentsData;
+    const topDisciplinasData = paretoDisciplinasRes.topDisciplinasData;
+    const topCausesData = paretoCausesRes.topCausesData;
     const reliabilityTrendData = useMemo(() => {
         return calculateReliabilityTrend(activeRawData, validatedDateRange, aggregation);
     }, [activeRawData, validatedDateRange, aggregation]);
@@ -143,14 +184,33 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
 
 
 
-    const handleBarToggle = (key) => setFilterSelection(prev => prev === key ? null : key);
+    const handleBarToggle = (key) => setFilterSelection(prev => {
+        if (Array.isArray(prev)) return prev.includes(key) ? (prev.length === 1 ? null : prev.filter(k => k !== key)) : [...prev, key];
+        if (prev) return prev === key ? null : [prev, key];
+        return key;
+    });
     const handleChartDrillDown = (key, type) => {
+        // Drill down overrides multi-selection? Or keeps it? 
+        // Drill down usually implies "Focus on this". Let's keep existing behavior (Single select for Drill down)
         if (filterSelection === key && lossFilter === type) { setFilterSelection(null); setLossFilter(null); }
         else { setFilterSelection(key); setLossFilter(type); }
     };
     const toggleLossFilter = (type) => setLossFilter(prev => prev === type ? null : type);
-    const handleEquipmentToggle = (equipName) => setEquipmentFilter(prev => prev === equipName ? null : equipName);
-    const handleDisciplinaToggle = (discName) => setDisciplinaFilter(prev => prev === discName ? null : discName);
+    const handleEquipmentToggle = (equipName) => setEquipmentFilter(prev => {
+        if (Array.isArray(prev)) return prev.includes(equipName) ? (prev.length === 1 ? null : prev.filter(k => k !== equipName)) : [...prev, equipName];
+        if (prev) return prev === equipName ? null : [prev, equipName];
+        return equipName;
+    });
+    const handleDisciplinaToggle = (discName) => setDisciplinaFilter(prev => {
+        if (Array.isArray(prev)) return prev.includes(discName) ? (prev.length === 1 ? null : prev.filter(k => k !== discName)) : [...prev, discName];
+        if (prev) return prev === discName ? null : [prev, discName];
+        return discName;
+    });
+    const handleCauseToggle = (causeName) => setCauseFilter(prev => {
+        if (Array.isArray(prev)) return prev.includes(causeName) ? (prev.length === 1 ? null : prev.filter(k => k !== causeName)) : [...prev, causeName];
+        if (prev) return prev === causeName ? null : [prev, causeName];
+        return causeName;
+    });
     const getLocalStatusColor = (val) => { if (val < 50) return COLORS.red; if (val < 90) return COLORS.yellow; return COLORS.green; };
 
     // Smart Date Range Handler: Auto-ordena datas (menor = start, maior = end)
@@ -205,18 +265,25 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                             <button onClick={() => setTreeSubTab('verification')} className={`px-3 md:px-4 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${treeSubTab === 'verification' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Verificação</button>
                         </>
                     )}
-                    {/* Título Estático para outras abas */}
+                    {/* Título Estático para outras abas (exceto Losses que agora tem sub-abas) */}
                     {activeTab === 'overview' && <span className="px-3 py-1.5 text-xs font-bold text-orange-600">Visão Geral</span>}
-                    {activeTab === 'losses' && <span className="px-3 py-1.5 text-xs font-bold text-orange-600">Análise de Perdas</span>}
+                    {activeTab === 'losses' && (
+                        <>
+                            <button onClick={() => setLossesSubTab('overview')} className={`px-3 md:px-4 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${lossesSubTab === 'overview' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Visão Geral</button>
+                            <button onClick={() => setLossesSubTab('availability')} className={`px-3 md:px-4 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${lossesSubTab === 'availability' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Aderência Disp.</button>
+                        </>
+                    )}
                     {activeTab === 'reliability' && <span className="px-3 py-1.5 text-xs font-bold text-orange-600">Confiabilidade</span>}
                 </div>
                 <div className="flex-1 flex justify-center min-w-0 w-full 2xl:w-auto">
-                    {(filterSelection || equipmentFilter || lossFilter) && (
+                    {(filterSelection || equipmentFilter || disciplinaFilter || causeFilter || lossFilter) && (
                         <div className="flex items-center gap-3 bg-orange-50 border border-orange-100 text-orange-800 px-3 py-1.5 rounded-full text-[10px] font-bold shadow-sm animate-fade-in truncate max-w-full overflow-hidden">
                             <span className="shrink-0 flex items-center gap-1"><Filter size={12} /> Filtros:</span>
                             <div className="flex gap-2 overflow-x-auto no-scrollbar">
                                 {filterSelection && (<button onClick={() => setFilterSelection(null)} className="flex items-center gap-1 hover:text-red-500 transition-colors bg-white px-2 py-0.5 rounded-full border border-orange-100 whitespace-nowrap">{calculatedData.find(d => d.key === filterSelection)?.label} <X size={10} /></button>)}
-                                {equipmentFilter && (<button onClick={() => setEquipmentFilter(null)} className="flex items-center gap-1 hover:text-red-500 transition-colors bg-white px-2 py-0.5 rounded-full border border-orange-100 whitespace-nowrap"><Wrench size={10} /> {equipmentFilter} <X size={10} /></button>)}
+                                {equipmentFilter && (<button onClick={() => setEquipmentFilter(null)} className="flex items-center gap-1 hover:text-red-500 transition-colors bg-white px-2 py-0.5 rounded-full border border-orange-100 whitespace-nowrap"><Wrench size={10} /> {Array.isArray(equipmentFilter) ? `${equipmentFilter.length} Selecionados` : equipmentFilter} <X size={10} /></button>)}
+                                {disciplinaFilter && (<button onClick={() => setDisciplinaFilter(null)} className="flex items-center gap-1 hover:text-red-500 transition-colors bg-white px-2 py-0.5 rounded-full border border-orange-100 whitespace-nowrap"><Users size={10} /> {Array.isArray(disciplinaFilter) ? `${disciplinaFilter.length} Selecionados` : disciplinaFilter} <X size={10} /></button>)}
+                                {causeFilter && (<button onClick={() => setCauseFilter(null)} className="flex items-center gap-1 hover:text-red-500 transition-colors bg-white px-2 py-0.5 rounded-full border border-orange-100 whitespace-nowrap"><Layers size={10} /> {Array.isArray(causeFilter) ? `${causeFilter.length} Selecionados` : causeFilter} <X size={10} /></button>)}
                                 {lossFilter && (<button onClick={() => setLossFilter(null)} className="flex items-center gap-1 hover:text-red-500 transition-colors bg-white px-2 py-0.5 rounded-full border border-orange-100 whitespace-nowrap"><Layers size={10} /> {lossFilter === 'availability' ? 'Disp.' : 'Perf.'} <X size={10} /></button>)}
                             </div>
                         </div>
@@ -235,7 +302,13 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                             onClick={() => setAreaMode('patio')}
                             className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${areaMode === 'patio' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                         >
-                            Pátio/Envio
+                            Envio
+                        </button>
+                        <button
+                            onClick={() => setAreaMode('recebimento')}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${areaMode === 'recebimento' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            Recebimento
                         </button>
                     </div>
 
@@ -278,7 +351,7 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                 {/* ABA 1: VISÃO GERAL */}
                 {activeTab === 'overview' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-12 auto-rows-min 2xl:grid-rows-6 gap-4 2xl:h-full pb-4 2xl:pb-2">
-                        <div className="col-span-1 2xl:col-span-2 2xl:row-span-2 min-h-[220px] 2xl:min-h-0"><OEEGaugeCard value={parseFloat(activeAggregates.oee)} target={activeTargets.OEE} /></div>
+                        <div className="col-span-1 2xl:col-span-2 2xl:row-span-2 min-h-[220px] 2xl:min-h-0"><OEEGaugeCard value={parseFloat(activeAggregates.oee)} target={activeTargets.OEE} title={areaMode === 'recebimento' ? 'OEE Recebimento' : (areaMode === 'patio' ? 'OEE Envio' : 'OEE Máquinas')} /></div>
                         {/* CORREÇÃO VISUAL: Adicionando os títulos (rótulos) nos PillarCards */}
                         <div className="col-span-1 2xl:col-span-2 2xl:row-span-2 flex flex-col gap-2 min-h-[220px] 2xl:min-h-0">
                             {/* Título adicionado */}
@@ -290,7 +363,7 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                         </div>
                         <Card className="col-span-1 md:col-span-2 2xl:col-span-5 2xl:row-span-2 p-4 min-h-[280px] 2xl:min-h-0 relative">
                             <div className="flex justify-between items-center mb-2">
-                                <h3 className="text-sm font-bold uppercase flex items-center gap-2 text-slate-600"><TrendingDown size={16} /> BRIDGE DE PERDAS ({areaMode === 'patio' ? 'VOLUME' : 'FORNOS'})</h3>
+                                <h3 className="text-sm font-bold uppercase flex items-center gap-2 text-slate-600"><TrendingDown size={16} /> BRIDGE DE PERDAS ({(areaMode === 'patio' || areaMode === 'recebimento') ? 'VOLUME' : 'FORNOS'})</h3>
                                 <div className="flex items-center gap-2">
                                     <span className="text-xs bg-slate-100 text-slate-500 px-2 py-1 rounded font-medium">Meta → Realizado</span>
                                     <button
@@ -306,15 +379,15 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
 
                         </Card>
                         <div className="col-span-1 md:col-span-2 2xl:col-span-3 2xl:row-span-2 flex flex-col gap-2 min-h-[200px] 2xl:min-h-0">
-                            {areaMode === 'patio' ? (
+                            {(areaMode === 'patio' || areaMode === 'recebimento') ? (
                                 <>
-                                    <div className="flex-1"><BigNumberCard title="VOLUME TOTAL" valueNumeric={activeAggregates.totalWetCharge} displayValue={(activeAggregates.totalWetCharge || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} unit="ton" target={activeAggregates.totalDays * 4188} compact={true} /></div>
-                                    <div className="flex-1 bg-white rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] border-l-4 p-3 flex flex-col justify-between border border-slate-100" style={{ borderLeftColor: COLORS.orange }}><p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1 text-slate-400"><Timer size={12} /> TAXA MÉDIA</p><div className="flex items-baseline gap-1"><h3 className="text-2xl font-bold" style={{ color: COLORS.orange }}>{((activeAggregates.totalWetCharge || 0) / ((activeAggregates.loadingMins || 1) / 60)).toFixed(1)}</h3><span className="text-[10px] font-medium text-gray-400">t/h</span></div><div className="text-[9px] text-gray-400 border-t border-slate-50 pt-1 mt-1 flex justify-between"><span>Base: <strong>Volume / Loading</strong></span></div></div>
+                                    <div className="flex-1"><BigNumberCard title="VOLUME TOTAL" valueNumeric={activeAggregates.totalWetCharge} displayValue={(activeAggregates.totalWetCharge || 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} unit="ton" target={activeAggregates.patioBridgeMeta?.VM || (activeAggregates.totalDays * (areaMode === 'recebimento' ? BUSINESS_CONSTANTS_RECEBIMENTO.VOL_META : BUSINESS_CONSTANTS_PATIO.VOL_META))} compact={true} /></div>
+                                    <div className="flex-1 bg-white rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] border-l-4 p-3 flex flex-col justify-between border border-slate-100" style={{ borderLeftColor: COLORS.orange }}><p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1 text-slate-400"><Timer size={12} /> TAXA MÉDIA</p><div className="flex items-baseline gap-1"><h3 className="text-2xl font-bold" style={{ color: COLORS.orange }}>{((activeAggregates.totalWetCharge || 0) / ((activeAggregates.loadingMins || 1) / 60)).toFixed(1)}</h3><span className="text-[10px] font-medium text-gray-400">t/h</span></div><div className="text-[9px] text-gray-400 border-t border-slate-50 pt-1 mt-1 flex justify-between"><span>Base: <strong>Volume / Loading</strong></span><span>Meta: <strong>{(areaMode === 'recebimento' ? BUSINESS_CONSTANTS_RECEBIMENTO.TX_META : BUSINESS_CONSTANTS_PATIO.TX_META).toFixed(1)} t/h</strong></span></div></div>
                                 </>
                             ) : (
                                 <>
                                     <div className="flex-1"><BigNumberCard title="TOTAL FORNOS" valueNumeric={activeAggregates.ovensNumeric} displayValue={activeAggregates.ovensDisplay} unit="un" target={activeAggregates.targetOvens} compact={true} /></div>
-                                    <div className="flex-1 bg-white rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] border-l-4 p-3 flex flex-col justify-between border border-slate-100" style={{ borderLeftColor: COLORS.orange }}><p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1 text-slate-400"><Timer size={12} /> RITMO MÉDIO</p><div className="flex items-baseline gap-1"><h3 className="text-2xl font-bold" style={{ color: COLORS.orange }}>{activeAggregates.ritmoDisplay}</h3><span className="text-[10px] font-medium text-gray-400">min/forno</span></div><div className="text-[9px] text-gray-400 border-t border-slate-50 pt-1 mt-1 flex justify-between"><span>Base: <strong>Loading / Realizado</strong></span></div></div>
+                                    <div className="flex-1 bg-white rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] border-l-4 p-3 flex flex-col justify-between border border-slate-100" style={{ borderLeftColor: COLORS.orange }}><p className="text-[10px] font-bold uppercase tracking-wider mb-1 flex items-center gap-1 text-slate-400"><Timer size={12} /> RITMO MÉDIO</p><div className="flex items-baseline gap-1"><h3 className="text-2xl font-bold" style={{ color: COLORS.orange }}>{activeAggregates.ritmoDisplay}</h3><span className="text-[10px] font-medium text-gray-400">min/forno</span></div><div className="text-[9px] text-gray-400 border-t border-slate-50 pt-1 mt-1 flex justify-between"><span>Base: <strong>Loading / Realizado</strong></span><span>Meta: <strong>{((BUSINESS_CONSTANTS.TC_META - BUSINESS_CONSTANTS.SL_THEORY) * 60 / BUSINESS_CONSTANTS.FN_THEORY).toFixed(2)} min</strong></span></div></div>
                                 </>
                             )}
                         </div>
@@ -418,7 +491,7 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                                             <div className="flex gap-3 mb-1">
                                                 <div>
                                                     <span className="text-xl font-bold text-slate-700 block leading-none">{activeAggregates.patioDaysWithStopThursday || 0}</span>
-                                                    <span className="text-[8px] text-slate-400 font-bold uppercase">Quintas</span>
+                                                    <span className="text-[8px] text-slate-400 font-bold uppercase">{areaMode === 'recebimento' ? 'Sextas' : 'Quintas'}</span>
                                                 </div>
                                                 <div className="w-px bg-slate-200"></div>
                                                 <div>
@@ -441,7 +514,7 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                                             <div className="flex gap-3 mb-1">
                                                 <div>
                                                     <span className="text-xl font-bold text-slate-700 block leading-none">{activeAggregates.patioInsideOkThursday || 0}</span>
-                                                    <span className="text-[8px] text-slate-400 font-bold uppercase">Quintas</span>
+                                                    <span className="text-[8px] text-slate-400 font-bold uppercase">{areaMode === 'recebimento' ? 'Sextas' : 'Quintas'}</span>
                                                 </div>
                                                 <div className="w-px bg-slate-200"></div>
                                                 <div>
@@ -462,7 +535,7 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                                             <div className="flex gap-3 mb-1">
                                                 <div>
                                                     <span className="text-xl font-bold text-slate-700 block leading-none">{activeAggregates.patioStartOkThursday || 0}</span>
-                                                    <span className="text-[8px] text-slate-400 font-bold uppercase">Quintas</span>
+                                                    <span className="text-[8px] text-slate-400 font-bold uppercase">{areaMode === 'recebimento' ? 'Sextas' : 'Quintas'}</span>
                                                 </div>
                                                 <div className="w-px bg-slate-200"></div>
                                                 <div>
@@ -483,7 +556,7 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                                             <div className="flex gap-3 mb-1">
                                                 <div>
                                                     <span className="text-xl font-bold text-slate-700 block leading-none">{activeAggregates.patioEndOkThursday || 0}</span>
-                                                    <span className="text-[8px] text-slate-400 font-bold uppercase">Quintas</span>
+                                                    <span className="text-[8px] text-slate-400 font-bold uppercase">{areaMode === 'recebimento' ? 'Sextas' : 'Quintas'}</span>
                                                 </div>
                                                 <div className="w-px bg-slate-200"></div>
                                                 <div>
@@ -627,7 +700,7 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                                         const colorVol = getColorHigher(volActual, volTarget);
 
                                         const taxaActual = activeAggregates.patioBridgeReal?.TLIQR || 0;
-                                        const taxaTarget = 301; // TX_META t/h
+                                        const taxaTarget = areaMode === 'recebimento' ? BUSINESS_CONSTANTS_RECEBIMENTO.TX_META : BUSINESS_CONSTANTS_PATIO.TX_META; // TX_META t/h
                                         const taxaPct = taxaTarget > 0 ? ((taxaActual / taxaTarget) * 100).toFixed(0) : 0;
                                         const colorTaxa = getColorHigher(taxaActual, taxaTarget);
 
@@ -805,66 +878,97 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                     </div>
                 )}
 
+                {/* ABA 2: DISPONIBILIDADE E FALHAS (NOVA) */}
+                {activeTab === 'availability' && (
+                    <div className="h-full flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="p-4 border-b border-slate-100 flex justify-between items-center">
+                            <h3 className="font-bold text-slate-700 uppercase text-sm">Aderência Disponibilidade Intrínseca + Principais Falhas</h3>
+                            <div className="text-xs text-slate-400">Exibe as Top 3 falhas (Componente/Modo) para cada período</div>
+                        </div>
+                        <div className="flex-1 min-h-0 overflow-auto">
+                            <AvailabilityCausesChart
+                                data={calculatedData}
+                                rawData={activeRawData}
+                                target={activeTargets.AVAIL}
+                            />
+                        </div>
+                    </div>
+                )}
+
                 {/* ABA 4: PERDAS */}
                 {activeTab === 'losses' && (
-                    <div className="flex flex-col gap-6 h-full pb-4">
-                        {/* Linha 1: Cards de Perdas empilhados + Gráfico Composição */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            {/* Cards de Perdas empilhados */}
-                            <div className="col-span-1 flex flex-col gap-4">
-                                <Card onClick={() => toggleLossFilter('availability')} className={`flex-1 p-4 border-l-4 flex flex-col relative overflow-hidden transition-all duration-300 min-h-[160px] ${lossFilter === 'availability' ? 'ring-2 ring-blue-500 shadow-md scale-[1.02]' : lossFilter ? 'opacity-50 grayscale-[0.5]' : 'hover:shadow-md hover:scale-[1.01]'}`} style={{ borderLeftColor: COLORS.blue }}>
-                                    <div className="absolute top-0 right-0 p-3 opacity-10"><AlertTriangle size={40} color={COLORS.blue} /></div>
-                                    <h3 className="font-bold text-gray-500 uppercase text-[10px] mb-2 flex items-center gap-2">{lossFilter === 'availability' && <CheckCircle size={12} className="text-blue-600" />} Perdas de Disponibilidade</h3>
-                                    <div className="flex-1 flex flex-col justify-center gap-2">
-                                        <div>
-                                            <span className="text-2xl font-bold block" style={{ color: COLORS.blue }}>{activeAggregates.lossDispH} h</span>
-                                            <span className="text-[10px] text-gray-400">Total Indisponível {equipmentFilter ? `(${equipmentFilter})` : ''}</span>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-1 text-[10px]">
-                                            <div><span className="block font-bold text-slate-700">{activeAggregates.lossFailH} h</span><span className="text-gray-400">Falhas Téc.</span></div>
-                                            <div><span className="block font-bold text-slate-700">{(parseFloat(activeAggregates.lossDispH) - parseFloat(activeAggregates.lossFailH)).toFixed(1)} h</span><span className="text-gray-400">Outros/Ext.</span></div>
-                                        </div>
-                                        <div className="text-[9px]"><span className="text-gray-400">Franquia: </span><span className="font-bold text-slate-600">{((areaMode === 'maquinas' ? 3 : 3) * (activeAggregates.totalDays || 0)).toFixed(0)} h</span></div>
+                    <div className="h-full flex flex-col gap-6 pb-4">
+                        {lossesSubTab === 'overview' ? (
+                            <div className="flex flex-col gap-6 h-full">
+                                {/* Linha 1: Cards de Perdas empilhados + Gráfico Composição */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    {/* Cards de Perdas empilhados */}
+                                    <div className="col-span-1 flex flex-col gap-4">
+                                        <Card onClick={() => toggleLossFilter('availability')} className={`flex-1 p-4 border-l-4 flex flex-col relative overflow-hidden transition-all duration-300 min-h-[160px] ${lossFilter === 'availability' ? 'ring-2 ring-blue-500 shadow-md scale-[1.02]' : lossFilter ? 'opacity-50 grayscale-[0.5]' : 'hover:shadow-md hover:scale-[1.01]'}`} style={{ borderLeftColor: COLORS.blue }}>
+                                            <div className="absolute top-0 right-0 p-3 opacity-10"><AlertTriangle size={40} color={COLORS.blue} /></div>
+                                            <h3 className="font-bold text-gray-500 uppercase text-[10px] mb-2 flex items-center gap-2">{lossFilter === 'availability' && <CheckCircle size={12} className="text-blue-600" />} Perdas de Disponibilidade</h3>
+                                            <div className="flex-1 flex flex-col justify-center gap-2">
+                                                <div>
+                                                    <span className="text-2xl font-bold block" style={{ color: COLORS.blue }}>{activeAggregates.lossDispH} h</span>
+                                                    <span className="text-[10px] text-gray-400">Total Indisponível {equipmentFilter ? `(${equipmentFilter})` : ''}</span>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-1 text-[10px]">
+                                                    <div><span className="block font-bold text-slate-700">{activeAggregates.lossFailH} h</span><span className="text-gray-400">Falhas Téc.</span></div>
+                                                    <div><span className="block font-bold text-slate-700">{(parseFloat(activeAggregates.lossDispH) - parseFloat(activeAggregates.lossFailH)).toFixed(1)} h</span><span className="text-gray-400">Outros/Ext.</span></div>
+                                                </div>
+                                                <div className="text-[9px]"><span className="text-gray-400">Franquia: </span><span className="font-bold text-slate-600">{((areaMode === 'maquinas' ? 3 : 3) * (activeAggregates.totalDays || 0)).toFixed(0)} h</span></div>
+                                            </div>
+                                            <div className="absolute bottom-1 right-2 text-[8px] text-gray-300 italic">Clique para filtrar</div>
+                                        </Card>
+                                        <Card onClick={() => toggleLossFilter('performance')} className={`flex-1 p-4 border-l-4 flex flex-col relative overflow-hidden transition-all duration-300 min-h-[160px] ${lossFilter === 'performance' ? 'ring-2 ring-yellow-400 shadow-md scale-[1.02]' : lossFilter ? 'opacity-50 grayscale-[0.5]' : 'hover:shadow-md hover:scale-[1.01]'}`} style={{ borderLeftColor: COLORS.yellow }}>
+                                            <div className="absolute top-0 right-0 p-3 opacity-10"><Clock size={40} color={COLORS.yellow} /></div>
+                                            <h3 className="font-bold text-gray-500 uppercase text-[10px] mb-2 flex items-center gap-2">{lossFilter === 'performance' && <CheckCircle size={12} className="text-yellow-600" />} Perdas de Performance</h3>
+                                            <div className="flex-1 flex flex-col justify-center gap-2">
+                                                <div>
+                                                    <span className="text-2xl font-bold block" style={{ color: COLORS.yellow }}>{activeAggregates.lossUtilH} h</span>
+                                                    <span className="text-[10px] text-gray-400">Total Perda Ritmo/Ops {equipmentFilter ? `(${equipmentFilter})` : ''}</span>
+                                                </div>
+                                                <div className="text-[9px] text-gray-400 leading-relaxed">Inclui microparadas, redução de velocidade e trocas de turno.</div>
+                                                <div className="text-[9px]"><span className="text-gray-400">Franquia: </span><span className="font-bold text-slate-600">{((areaMode === 'maquinas' ? 2 : 1) * (activeAggregates.totalDays || 0)).toFixed(0)} h</span></div>
+                                            </div>
+                                            <div className="absolute bottom-1 right-2 text-[8px] text-gray-300 italic">Clique para filtrar</div>
+                                        </Card>
                                     </div>
-                                    <div className="absolute bottom-1 right-2 text-[8px] text-gray-300 italic">Clique para filtrar</div>
-                                </Card>
-                                <Card onClick={() => toggleLossFilter('performance')} className={`flex-1 p-4 border-l-4 flex flex-col relative overflow-hidden transition-all duration-300 min-h-[160px] ${lossFilter === 'performance' ? 'ring-2 ring-yellow-400 shadow-md scale-[1.02]' : lossFilter ? 'opacity-50 grayscale-[0.5]' : 'hover:shadow-md hover:scale-[1.01]'}`} style={{ borderLeftColor: COLORS.yellow }}>
-                                    <div className="absolute top-0 right-0 p-3 opacity-10"><Clock size={40} color={COLORS.yellow} /></div>
-                                    <h3 className="font-bold text-gray-500 uppercase text-[10px] mb-2 flex items-center gap-2">{lossFilter === 'performance' && <CheckCircle size={12} className="text-yellow-600" />} Perdas de Performance</h3>
-                                    <div className="flex-1 flex flex-col justify-center gap-2">
-                                        <div>
-                                            <span className="text-2xl font-bold block" style={{ color: COLORS.yellow }}>{activeAggregates.lossUtilH} h</span>
-                                            <span className="text-[10px] text-gray-400">Total Perda Ritmo/Ops {equipmentFilter ? `(${equipmentFilter})` : ''}</span>
-                                        </div>
-                                        <div className="text-[9px] text-gray-400 leading-relaxed">Inclui microparadas, redução de velocidade e trocas de turno.</div>
-                                        <div className="text-[9px]"><span className="text-gray-400">Franquia: </span><span className="font-bold text-slate-600">{((areaMode === 'maquinas' ? 2 : 1) * (activeAggregates.totalDays || 0)).toFixed(0)} h</span></div>
-                                    </div>
-                                    <div className="absolute bottom-1 right-2 text-[8px] text-gray-300 italic">Clique para filtrar</div>
-                                </Card>
+                                    {/* Gráfico Composição de Perdas */}
+                                    <Card className="col-span-1 md:col-span-2 p-4 min-h-[350px]">
+                                        <div className="flex justify-between items-center mb-2"><h3 className="font-bold text-slate-700 text-sm">Composição de Perdas (Horas)</h3><span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-1 rounded">Horas Disp. vs Perf.</span></div>
+                                        <div className="flex-1 min-h-0 h-full"><LossEvolutionChart data={calculatedData} onDrillDown={handleChartDrillDown} selectedKey={filterSelection} selectedType={lossFilter} /></div>
+                                    </Card>
+                                </div>
+                                {/* Linha 2: 3 Paretos lado a lado */}
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <Card className={`p-4 flex flex-col transition-all duration-300 h-[300px] ${disciplinaFilter ? 'ring-2 ring-orange-100' : ''}`}>
+                                        <h3 className="font-bold text-slate-700 text-xs mb-2 flex items-center gap-2"><Users size={14} className="text-orange-600" /> {lossFilter === 'availability' ? 'Disciplinas (Disp.)' : lossFilter === 'performance' ? 'Disciplinas (Perf.)' : 'Disciplinas (Geral)'}</h3>
+                                        <div className="flex-1 min-h-0 overflow-hidden"><ParetoChart data={topDisciplinasData} color={lossFilter === 'availability' ? COLORS.blue : lossFilter === 'performance' ? COLORS.yellow : COLORS.darkGray} emptyMessage="Nenhuma disciplina encontrada" onBarClick={handleDisciplinaToggle} selectedName={disciplinaFilter} /></div>
+                                        <div className="text-[9px] text-center text-gray-400 mt-1 italic">Clique na barra para filtrar</div>
+                                    </Card>
+                                    <Card className={`p-4 flex flex-col transition-all duration-300 h-[300px] ${equipmentFilter ? 'ring-2 ring-orange-100' : ''}`}>
+                                        <h3 className="font-bold text-slate-700 text-xs mb-2 flex items-center gap-2"><Wrench size={14} className="text-orange-600" /> {lossFilter === 'availability' ? 'Equipamentos (Disp.)' : lossFilter === 'performance' ? 'Equipamentos (Perf.)' : 'Equipamentos (Geral)'}</h3>
+                                        <div className="flex-1 min-h-0 overflow-hidden"><ParetoChart data={topEquipmentsData} color={lossFilter === 'availability' ? COLORS.blue : lossFilter === 'performance' ? COLORS.yellow : COLORS.darkGray} emptyMessage="Tag de Equipamento não encontrada" onBarClick={handleEquipmentToggle} selectedName={equipmentFilter} /></div>
+                                        <div className="text-[9px] text-center text-gray-400 mt-1 italic">Clique na barra para filtrar</div>
+                                    </Card>
+                                    <Card className="p-4 flex flex-col transition-all duration-300 h-[300px]">
+                                        <h3 className="font-bold text-slate-700 text-xs mb-2 flex items-center gap-2"><Layers size={14} className="text-orange-600" /> {lossFilter === 'availability' ? 'Comp. - Modo Falha (Disp.)' : lossFilter === 'performance' ? 'Comp. - Modo Falha (Perf.)' : 'Comp. - Modo Falha (Geral)'}</h3>
+                                        <div className="flex-1 min-h-0 overflow-hidden"><ParetoChart data={topCausesData} color={lossFilter === 'availability' ? COLORS.blue : lossFilter === 'performance' ? COLORS.yellow : COLORS.darkGray} emptyMessage={equipmentFilter ? "Nenhuma falha para este equipamento" : "Selecione um equipamento ou período"} onBarClick={handleCauseToggle} selectedName={causeFilter} /></div>
+                                    </Card>
+                                </div>
                             </div>
-                            {/* Gráfico Composição de Perdas */}
-                            <Card className="col-span-1 md:col-span-2 p-4 min-h-[350px]">
-                                <div className="flex justify-between items-center mb-2"><h3 className="font-bold text-slate-700 text-sm">Composição de Perdas (%)</h3><span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-1 rounded">Proporção Disp. vs Perf.</span></div>
-                                <div className="flex-1 min-h-0 h-full"><LossEvolutionChart data={calculatedData} onDrillDown={handleChartDrillDown} selectedKey={filterSelection} selectedType={lossFilter} /></div>
-                            </Card>
-                        </div>
-                        {/* Linha 2: 3 Paretos lado a lado */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <Card className={`p-4 flex flex-col transition-all duration-300 h-[300px] ${disciplinaFilter ? 'ring-2 ring-orange-100' : ''}`}>
-                                <h3 className="font-bold text-slate-700 text-xs mb-2 flex items-center gap-2"><Users size={14} className="text-orange-600" /> {lossFilter === 'availability' ? 'Disciplinas (Disp.)' : lossFilter === 'performance' ? 'Disciplinas (Perf.)' : 'Disciplinas (Geral)'}</h3>
-                                <div className="flex-1 min-h-0 overflow-hidden"><ParetoChart data={topDisciplinasData} color={lossFilter === 'availability' ? COLORS.blue : lossFilter === 'performance' ? COLORS.yellow : COLORS.darkGray} emptyMessage="Nenhuma disciplina encontrada" onBarClick={handleDisciplinaToggle} selectedName={disciplinaFilter} /></div>
-                                <div className="text-[9px] text-center text-gray-400 mt-1 italic">Clique na barra para filtrar</div>
-                            </Card>
-                            <Card className={`p-4 flex flex-col transition-all duration-300 h-[300px] ${equipmentFilter ? 'ring-2 ring-orange-100' : ''}`}>
-                                <h3 className="font-bold text-slate-700 text-xs mb-2 flex items-center gap-2"><Wrench size={14} className="text-orange-600" /> {lossFilter === 'availability' ? 'Equipamentos (Disp.)' : lossFilter === 'performance' ? 'Equipamentos (Perf.)' : 'Equipamentos (Geral)'}</h3>
-                                <div className="flex-1 min-h-0 overflow-hidden"><ParetoChart data={topEquipmentsData} color={lossFilter === 'availability' ? COLORS.blue : lossFilter === 'performance' ? COLORS.yellow : COLORS.darkGray} emptyMessage="Tag de Equipamento não encontrada" onBarClick={handleEquipmentToggle} selectedName={equipmentFilter} /></div>
-                                <div className="text-[9px] text-center text-gray-400 mt-1 italic">Clique na barra para filtrar</div>
-                            </Card>
-                            <Card className="p-4 flex flex-col transition-all duration-300 h-[300px]">
-                                <h3 className="font-bold text-slate-700 text-xs mb-2 flex items-center gap-2"><Layers size={14} className="text-orange-600" /> {lossFilter === 'availability' ? 'Comp. - Modo Falha (Disp.)' : lossFilter === 'performance' ? 'Comp. - Modo Falha (Perf.)' : 'Comp. - Modo Falha (Geral)'}</h3>
-                                <div className="flex-1 min-h-0 overflow-hidden"><ParetoChart data={topCausesData} color={lossFilter === 'availability' ? COLORS.blue : lossFilter === 'performance' ? COLORS.yellow : COLORS.darkGray} emptyMessage={equipmentFilter ? "Nenhuma falha para este equipamento" : "Selecione um equipamento ou período"} /></div>
-                            </Card>
-                        </div>
+                        ) : (
+                            <div className="h-full flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                                <div className="h-full flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                                    <AvailabilityCausesChart
+                                        data={calculatedData}
+                                        rawData={activeRawData}
+                                        target={activeTargets.AVAIL}
+                                    />
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 

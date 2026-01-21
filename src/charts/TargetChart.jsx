@@ -14,18 +14,18 @@ const TargetChart = memo(({ data, dataKey, target, title, colorLine, yMax = 110,
                 <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={data} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                        <XAxis dataKey="label" fontSize={9} tickLine={false} axisLine={false} tick={{fill: '#94A3B8'}} dy={5} />
-                        <YAxis domain={[0, yMax]} fontSize={9} tickLine={false} axisLine={false} tick={{fill: '#94A3B8'}} />
-                        <Tooltip cursor={{fill: '#F1F5F9'}} contentStyle={{borderRadius:'8px', border:'none', boxShadow:'0 4px 12px rgba(0,0,0,0.1)', fontSize: '12px'}} />
+                        <XAxis dataKey="label" fontSize={9} tickLine={false} axisLine={false} tick={{ fill: '#94A3B8' }} dy={5} />
+                        <YAxis domain={[0, yMax]} fontSize={9} tickLine={false} axisLine={false} tick={{ fill: '#94A3B8' }} />
+                        <Tooltip cursor={{ fill: '#F1F5F9' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '12px' }} />
                         <ReferenceLine y={target} stroke={COLORS.darkGray} strokeDasharray="3 3" strokeWidth={1} />
                         <Bar dataKey={dataKey} barSize={20} radius={[3, 3, 0, 0]} onClick={(data) => { if (data && onBarClick) { onBarClick(data.key); } }}>
                             {data.map((entry, index) => {
-                                const isSelected = selectedKey ? entry.key === selectedKey : true;
+                                const isSelected = selectedKey ? (Array.isArray(selectedKey) ? selectedKey.includes(entry.key) : entry.key === selectedKey) : true;
                                 const baseColor = entry[dataKey] >= target ? COLORS.green : COLORS.red;
                                 return (<Cell key={`cell-${index}`} fill={baseColor} opacity={isSelected ? 1 : 0.2} cursor="pointer" />);
                             })}
                         </Bar>
-                        <Line type="monotone" dataKey={dataKey} stroke={colorLine} strokeWidth={2} dot={{r: 1}} activeDot={{r: 4}} opacity={selectedKey ? 0.3 : 1} />
+                        <Line type="monotone" dataKey={dataKey} stroke={colorLine} strokeWidth={2} dot={{ r: 1 }} activeDot={{ r: 4 }} opacity={selectedKey ? 0.3 : 1} />
                     </ComposedChart>
                 </ResponsiveContainer>
             </div>

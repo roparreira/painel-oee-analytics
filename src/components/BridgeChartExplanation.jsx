@@ -1,11 +1,12 @@
 import React from 'react';
 import { X, Calculator, Info } from 'lucide-react';
-import { BUSINESS_CONSTANTS, BUSINESS_CONSTANTS_PATIO, TARGETS } from '../config';
+import { BUSINESS_CONSTANTS, BUSINESS_CONSTANTS_PATIO, BUSINESS_CONSTANTS_RECEBIMENTO, TARGETS } from '../config';
 
 const BridgeChartExplanation = ({ aggregates, areaMode = 'patio', onClose }) => {
     if (!aggregates) return null;
 
-    const isPatio = areaMode === 'patio';
+    const isPatio = areaMode === 'patio' || areaMode === 'recebimento';
+    const BC = areaMode === 'recebimento' ? BUSINESS_CONSTANTS_RECEBIMENTO : BUSINESS_CONSTANTS_PATIO;
 
     // --- PÁTIO LOGIC (NOVA LÓGICA COM 4 PARCELAS) ---
     if (isPatio) {
@@ -38,7 +39,7 @@ const BridgeChartExplanation = ({ aggregates, areaMode = 'patio', onClose }) => 
                     <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
                         <h3 className="font-bold text-slate-700 flex items-center gap-2">
                             <Calculator size={18} className="text-blue-500" />
-                            Detalhamento: Bridge de Volume (Pátio/Envio)
+                            Detalhamento: Bridge de Volume ({areaMode === 'recebimento' ? 'Recebimento' : 'Envio'})
                         </h3>
                         <button onClick={onClose} className="p-1 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-colors">
                             <X size={20} />
@@ -51,7 +52,7 @@ const BridgeChartExplanation = ({ aggregates, areaMode = 'patio', onClose }) => 
                             <Info size={16} className="shrink-0 mt-0.5" />
                             <div>
                                 <p className="font-bold mb-1">Schedule Loss Variável</p>
-                                <p>{bm.thursdays} quintas (8h PP) + {bm.otherDays} outros dias (4h PP). Taxa Líquida Meta média: <strong>{bm.TLIQ?.toFixed(1)} t/h</strong></p>
+                                <p>{bm.thursdays || bm.fridays} {areaMode === 'recebimento' ? 'sextas' : 'quintas'} (8h PP) + {bm.otherDays} outros dias (4h PP). Taxa Líquida Meta média: <strong>{bm.TLIQ?.toFixed(1)} t/h</strong></p>
                             </div>
                         </div>
 
@@ -60,7 +61,7 @@ const BridgeChartExplanation = ({ aggregates, areaMode = 'patio', onClose }) => 
                             <h4 className="text-sm font-bold text-slate-700 border-l-4 border-gray-400 pl-2">1. Volume Meta</h4>
                             <div className="text-xs bg-slate-50 p-3 rounded-lg border border-slate-100">
                                 <span className="text-slate-700 font-mono block">
-                                    {aggregates.totalDays} dias × {BUSINESS_CONSTANTS_PATIO.VOL_META.toLocaleString('pt-BR')} t = <strong className="text-lg">{Math.round(bm.VM).toLocaleString('pt-BR')} t</strong>
+                                    {aggregates.totalDays} dias × {BC.VOL_META.toLocaleString('pt-BR')} t = <strong className="text-lg">{Math.round(bm.VM).toLocaleString('pt-BR')} t</strong>
                                 </span>
                             </div>
                         </div>

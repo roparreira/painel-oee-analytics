@@ -2,7 +2,7 @@ import {
     parseDate, getProductionDate, formatDateISO, parseNumber,
     getMinutesInsideWindow, getAggregationKey, formatDateDisplay, formatDuration, dayjs
 } from '../utils';
-import { TARGETS, TARGETS_PATIO, BUSINESS_CONSTANTS, BUSINESS_CONSTANTS_PATIO, STEPPED_TARGETS_MAQUINAS, STEPPED_TARGETS_PATIO } from '../config';
+import { TARGETS, TARGETS_PATIO, BUSINESS_CONSTANTS, BUSINESS_CONSTANTS_PATIO, BUSINESS_CONSTANTS_RECEBIMENTO, STEPPED_TARGETS_MAQUINAS, STEPPED_TARGETS_PATIO, STEPPED_TARGETS_RECEBIMENTO } from '../config';
 
 // --- HELPERS DE REGRESSÃO (Para calcular Beta e Eta) ---
 const calculateLinearRegression = (data) => {
@@ -39,7 +39,7 @@ const readExcelToArray = (file) => {
     });
 };
 
-export const processFiles = async (fileStop, fileProd, fileDespacho = null) => {
+export const processFiles = async (fileStop, fileProd, fileDespacho = null, fileRecebimento = null) => {
     const ignored = [];
 
     // 1. Processar Apontamentos (Stops)
@@ -77,9 +77,11 @@ export const processFiles = async (fileStop, fileProd, fileDespacho = null) => {
 
     const cleanStops = [];
     const cleanStopsPatio = [];
+    const cleanStopsRecebimento = [];
     let totalStopDuration = 0;
     let maintenanceDuration = 0;
     let totalStopDurationPatio = 0;
+    let totalStopDurationRecebimento = 0;
 
     for (let i = hIdx + 1; i < rowsStop.length; i++) {
         const r = rowsStop[i];
@@ -93,9 +95,10 @@ export const processFiles = async (fileStop, fileProd, fileDespacho = null) => {
         const isMaquina = valProc.includes('maquina') || valProc.includes('máquina');
         const isPatio = valProc.includes('patio') || valProc.includes('pátio');
         const isEnvio = valLinha.includes('envio');
+        const isRecebimento = valLinha.includes('recebimento');
 
-        // Ignorar se não for nem Máquina nem Pátio/Envio
-        if (!isMaquina && !(isPatio && isEnvio)) {
+        // Ignorar se não for nem Máquina nem Pátio/Envio nem Pátio/Recebimento
+        if (!isMaquina && !(isPatio && isEnvio) && !(isPatio && isRecebimento)) {
             ignored.push({ row: i + 1, reason: `Processo: ${valProc}, Linha: ${valLinha}` }); continue;
         }
 
@@ -104,9 +107,9 @@ export const processFiles = async (fileStop, fileProd, fileDespacho = null) => {
 
         if (!start || !end) { ignored.push({ row: i + 1, reason: `Data Inválida` }); continue; }
 
-        // Para Pátio: usar coluna Z (Data de Produção). Para Máquinas: calcular de início.
+        // Para Pátio (Envio/Recebimento): usar coluna Z (Data de Produção). Para Máquinas: calcular de início.
         let dateStr;
-        if (isPatio && isEnvio) {
+        if ((isPatio && isEnvio) || (isPatio && isRecebimento)) {
             const dataProdVal = parseDate(r[idxS.dataProd]);
             dateStr = dataProdVal ? formatDateISO(dataProdVal) : null;
         } else {
@@ -149,6 +152,12 @@ export const processFiles = async (fileStop, fileProd, fileDespacho = null) => {
         if (isPatio && isEnvio) {
             totalStopDurationPatio += safeDuration;
             cleanStopsPatio.push(stopRecord);
+        }
+
+        // Processar Pátio/Recebimento (independente de 'parou')
+        if (isPatio && isRecebimento) {
+            totalStopDurationRecebimento += safeDuration;
+            cleanStopsRecebimento.push(stopRecord);
         }
     }
 
@@ -266,16 +275,69 @@ export const processFiles = async (fileStop, fileProd, fileDespacho = null) => {
         despachoStats.totalVolume = totalVolDespacho;
     }
 
+    // 4. Processar Totalizado de Recebimento (Pátio/Recebimento) - Opcional
+    const cleanProdRecebimento = {};
+    let totalVolRecebimento = 0;
+    let recebimentoStats = { count: 0, totalVolume: 0 };
+
+    if (fileRecebimento) {
+        const wbRecebimento = await readExcelToArray(fileRecebimento);
+        const wsRecebimento = wbRecebimento.Sheets[wbRecebimento.SheetNames[0]];
+        const rowsRecebimento = window.XLSX.utils.sheet_to_json(wsRecebimento, { header: 1, defval: null });
+
+        // Encontrar cabeçalho (procura por "Período" ou "Data" na coluna A)
+        let hIdxRecebimento = 0;
+        for (let i = 0; i < Math.min(rowsRecebimento.length, 20); i++) {
+            const row = rowsRecebimento[i];
+            if (row && row[0] && (String(row[0]).toLowerCase().includes('período') || String(row[0]).toLowerCase().includes('periodo') || String(row[0]).toLowerCase().includes('data'))) {
+                hIdxRecebimento = i;
+                break;
+            }
+        }
+
+        for (let i = hIdxRecebimento + 1; i < rowsRecebimento.length; i++) {
+            const r = rowsRecebimento[i];
+            if (!r) continue;
+
+            // Coluna A: Período (Data), Coluna C: Volume recebido base úmida [ton]
+            const dateVal = parseDate(r[0]);
+            const volumeVal = parseNumber(r[2]); // Coluna C (índice 2)
+
+            if (!dateVal || volumeVal === 0) continue;
+            const iso = formatDateISO(dateVal);
+            if (!iso) continue;
+
+            totalVolRecebimento += volumeVal;
+            recebimentoStats.count++;
+
+            // Criar estrutura compatível com prod
+            cleanProdRecebimento[iso] = {
+                date: dateVal,
+                planCoke: 0,
+                realCoke: 0,
+                ovens: 0,
+                yield: 100, // Qualidade sempre 100% para Recebimento
+                water: 0,
+                wetCharge: volumeVal // Volume usado para cálculo TX_REAL
+            };
+        }
+        recebimentoStats.totalVolume = totalVolRecebimento;
+    }
+
     return {
         stops: cleanStops,
         stopsPatio: cleanStopsPatio,
+        stopsRecebimento: cleanStopsRecebimento,
         prod: cleanProd,
         prodPatio: cleanProdPatio,
+        prodRecebimento: cleanProdRecebimento,
         auditStats: {
             stops: { count: cleanStops.length, totalHours: (totalStopDuration / 60).toFixed(1), maintHours: (maintenanceDuration / 60).toFixed(1) },
             stopsPatio: { count: cleanStopsPatio.length, totalHours: (totalStopDurationPatio / 60).toFixed(1) },
+            stopsRecebimento: { count: cleanStopsRecebimento.length, totalHours: (totalStopDurationRecebimento / 60).toFixed(1) },
             prod: { days: daysSpan, ovens: totalFornos, prodTons: totalProdReal.toFixed(0), water: totalWater.toFixed(0) },
-            despacho: despachoStats
+            despacho: despachoStats,
+            recebimento: recebimentoStats
         },
         ignored
     };
@@ -285,14 +347,14 @@ export const processFiles = async (fileStop, fileProd, fileDespacho = null) => {
 // (O código de cálculo permanece o mesmo para MTTR, MTBF, Aggregates, e Weibull)
 // ... [Código de calculateOEEData, calculateDashboardAggregates, calculateTreeStats, calculateJackKnifeData, calculateReliabilityTrend, calculateWeibullData]
 
-export const calculateOEEData = (rawData, dateRange, aggregation, equipmentFilter, areaMode = 'maquinas') => {
+export const calculateOEEData = (rawData, dateRange, aggregation, equipmentFilter, disciplinaFilter, causeFilter, areaMode = 'maquinas') => {
     const { stops, prod } = rawData;
     const dates = Object.keys(prod).sort();
     if (dates.length === 0 || !dateRange.start || !dateRange.end) return [];
 
     // Selecionar constantes baseado no modo
-    const isPatio = areaMode === 'patio';
-    const BC = isPatio ? BUSINESS_CONSTANTS_PATIO : BUSINESS_CONSTANTS;
+    const isPatio = areaMode === 'patio' || areaMode === 'recebimento';
+    const BC = areaMode === 'recebimento' ? BUSINESS_CONSTANTS_RECEBIMENTO : (areaMode === 'patio' ? BUSINESS_CONSTANTS_PATIO : BUSINESS_CONSTANTS);
 
     const results = [];
 
@@ -304,7 +366,51 @@ export const calculateOEEData = (rawData, dateRange, aggregation, equipmentFilte
         if (dateKey < dateRange.start || dateKey > dateRange.end) return;
         const p = prod[dateKey];
         let s = stops.filter(stop => stop.dateStr === dateKey);
-        if (equipmentFilter) s = s.filter(stop => stop.equip === equipmentFilter);
+
+        // -- FILTRAGEM GLOBAL (Equipamento, Disciplina, Causa) --
+        // 1. Equipamento
+        if (equipmentFilter) {
+            if (Array.isArray(equipmentFilter)) s = s.filter(stop => equipmentFilter.includes(stop.equip));
+            else s = s.filter(stop => stop.equip === equipmentFilter);
+        }
+
+        // 2. Disciplina
+        if (disciplinaFilter) {
+            if (Array.isArray(disciplinaFilter)) {
+                s = s.filter(stop => {
+                    const dLabel = stop.disciplina || "Sem Disciplina";
+                    return disciplinaFilter.includes(dLabel);
+                });
+            } else {
+                s = s.filter(stop => {
+                    const dLabel = stop.disciplina || "Sem Disciplina";
+                    return dLabel === disciplinaFilter;
+                });
+            }
+        }
+
+        // 3. Causa (Componente - Modo de Falha)
+        if (causeFilter) {
+            const checkCause = (stop, filterVal) => {
+                let label = "Não identificado";
+                if (stop.comp || stop.modo) label = `${stop.comp || '?'} - ${stop.modo || '?'}`;
+                else label = stop.desc || stop.tipo || "Geral";
+                if (label.length > 35) label = label.substring(0, 35) + '...'; // Mesmo truncamento do Pareto
+                return label === filterVal;
+            };
+
+            if (Array.isArray(causeFilter)) {
+                s = s.filter(stop => {
+                    let label = "Não identificado";
+                    if (stop.comp || stop.modo) label = `${stop.comp || '?'} - ${stop.modo || '?'}`;
+                    else label = stop.desc || stop.tipo || "Geral";
+                    if (label.length > 35) label = label.substring(0, 35) + '...';
+                    return causeFilter.includes(label);
+                });
+            } else {
+                s = s.filter(stop => checkCause(stop, causeFilter));
+            }
+        }
 
         // Tempo Calendário baseado no modo
         const HOURS_PER_DAY = BC.TC_META;
@@ -439,6 +545,27 @@ export const calculateOEEData = (rawData, dateRange, aggregation, equipmentFilte
             perfFinal = AVOL * UF * ADFN;
         }
 
+        // Meta Calculation for Bridge (Patio/Recebimento)
+        let PPM_Meta = 0, SLM_Meta = 0, LTM_Meta = 0, TLM_Meta = 0, TLIQ_Meta = 0, VM_Meta = 0;
+        let thursdaysInPeriod = 0, otherDaysInPeriod = 0;
+
+        if (isPatio) {
+            const dObj = new Date(dateKey + 'T12:00:00');
+            const dayOfWeek = dObj.getDay();
+            const isThursdayDay = dayOfWeek === 4;
+
+            if (isThursdayDay) thursdaysInPeriod = 1; else otherDaysInPeriod = 1;
+
+            const PPM_day = isThursdayDay ? BC.PPM_THURSDAY : BC.PPM_OTHER;
+            PPM_Meta = PPM_day;
+            SLM_Meta = PPM_day + BC.TTM;
+            LTM_Meta = BC.TC_META - SLM_Meta;
+            TLM_Meta = LTM_Meta - BC.PNPM - BC.POM;
+            // TLIQ_day = BC.VOL_META / TLM_day
+            TLIQ_Meta = TLM_Meta > 0 ? (BC.VOL_META / TLM_Meta) : 0;
+            VM_Meta = BC.VOL_META;
+        }
+
         const avail = loading > 0 ? (operating / loading) : 0;
         const qual = isPatio ? 1 : (p.yield / 100); // Pátio sempre 100%
         const oee = avail * perfFinal * qual;
@@ -450,7 +577,9 @@ export const calculateOEEData = (rawData, dateRange, aggregation, equipmentFilte
             ovens: p.ovens, yield: isPatio ? 100 : p.yield, realCoke: p.realCoke, water: p.water, wetCharge: p.wetCharge,
             failureLoss, extMaint, outsideMaint, shiftChange, opsLoss,
             targetMaint: TARGET_MAINT_MINS, usedMaint: totalUsedMaint, loadingMins, excessShift,
-            AVOL, UF, ADFN, ADTX, netOperating, areaMode
+            AVOL, UF, ADFN, ADTX, netOperating, areaMode,
+            // New Meta Fields for Bridge Aggregation
+            PPM_Meta, SLM_Meta, LTM_Meta, TLM_Meta, TLIQ_Meta, VM_Meta, thursdaysInPeriod, otherDaysInPeriod
         });
     });
 
@@ -542,8 +671,8 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
 
     if (dataToAggregate.length === 0) return null;
 
-    const isPatio = areaMode === 'patio';
-    const BC = isPatio ? BUSINESS_CONSTANTS_PATIO : BUSINESS_CONSTANTS;
+    const isPatio = areaMode === 'patio' || areaMode === 'recebimento';
+    const BC = areaMode === 'recebimento' ? BUSINESS_CONSTANTS_RECEBIMENTO : (areaMode === 'patio' ? BUSINESS_CONSTANTS_PATIO : BUSINESS_CONSTANTS);
 
     const sum = (key) => dataToAggregate.reduce((a, b) => a + (b[key] || 0), 0);
     const totalDays = sum('days');
@@ -615,29 +744,15 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
         let thursdays = 0;
         let otherDays = 0;
 
-        // Usa as datas do período selecionado
-        const startDate = new Date(dateRange.start + 'T12:00:00');
-        const endDate = new Date(dateRange.end + 'T12:00:00');
+        // Calcula metas acumuladas SOMANDO os valores diários já calculados (respeita o filtro)
+        totalPPM = sum('PPM_Meta');
+        totalSLM = sum('SLM_Meta');
+        totalLTM = sum('LTM_Meta');
+        totalTLM = sum('TLM_Meta');
+        totalTLIQxDay = sum('TLIQ_Meta'); // Soma das taxas diárias para média
 
-        for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-            const dayOfWeek = d.getDay(); // 0=domingo, 4=quinta
-            const isThursday = dayOfWeek === 4;
-
-            const PPM_day = isThursday ? BC.PPM_THURSDAY : BC.PPM_OTHER;
-            const SLM_day = PPM_day + BC.TTM;
-            const LTM_day = BC.TC_META - PPM_day - BC.TTM;
-            const TLM_day = LTM_day - BC.PNPM - BC.POM;
-            const TLIQ_day = BC.VOL_META / TLM_day; // Taxa Líquida Meta do dia
-
-            totalPPM += PPM_day;
-            totalSLM += SLM_day;
-            totalLTM += LTM_day;
-            totalTLM += TLM_day;
-            totalTLIQxDay += TLIQ_day;
-
-            if (isThursday) thursdays++;
-            else otherDays++;
-        }
+        thursdays = sum('thursdaysInPeriod');
+        otherDays = sum('otherDaysInPeriod');
 
         const TLIQ_avg = totalTLIQxDay / totalDays; // Taxa Líquida Meta média
 
@@ -721,9 +836,11 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
             const month = d.getMonth(); // 0-11
             let targetSet = null;
 
-            if (month <= 2) targetSet = STEPPED_TARGETS_PATIO.P1;       // Jan-Mar
-            else if (month <= 6) targetSet = STEPPED_TARGETS_PATIO.P2;  // Abr-Jul (até mês 6 - Julho)
-            else targetSet = STEPPED_TARGETS_PATIO.P3;                  // Ago-Dez
+            // Selecionar stepped targets baseado no areaMode
+            const STEPPED = areaMode === 'recebimento' ? STEPPED_TARGETS_RECEBIMENTO : STEPPED_TARGETS_PATIO;
+            if (month <= 2) targetSet = STEPPED.P1;       // Jan-Mar
+            else if (month <= 6) targetSet = STEPPED.P2;  // Abr-Jul (até mês 6 - Julho)
+            else targetSet = STEPPED.P3;                  // Ago-Dez
 
             sumOEE_P += targetSet.OEE;
             sumAVAIL_P += targetSet.AVAIL;
@@ -1300,12 +1417,25 @@ export const calculateParetoData = (rawData, dateRange, filterSelection, aggrega
             if (lossFilter === 'performance' && isMaint) return;
         }
 
-        // Filtros interativos de equipamento e disciplina
+        // Filtros interativos de equipamento e disciplina (Array ou String)
         const equipLabel = s.equip && s.equip !== '' ? s.equip : "Sem Tag";
         const disciplinaLabel = s.disciplina && s.disciplina !== '' ? s.disciplina : "Sem Disciplina";
 
-        if (equipmentFilter && s.equip !== equipmentFilter) return;
-        if (disciplinaFilter && disciplinaLabel !== disciplinaFilter) return;
+        if (equipmentFilter) {
+            if (Array.isArray(equipmentFilter)) {
+                if (!equipmentFilter.includes(s.equip)) return;
+            } else {
+                if (s.equip !== equipmentFilter) return;
+            }
+        }
+
+        if (disciplinaFilter) {
+            if (Array.isArray(disciplinaFilter)) {
+                if (!disciplinaFilter.includes(disciplinaLabel)) return;
+            } else {
+                if (disciplinaLabel !== disciplinaFilter) return;
+            }
+        }
 
         reasonsEquip[equipLabel] = (reasonsEquip[equipLabel] || 0) + s.duration;
         reasonsDisciplina[disciplinaLabel] = (reasonsDisciplina[disciplinaLabel] || 0) + s.duration;

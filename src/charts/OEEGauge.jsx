@@ -2,7 +2,7 @@ import React, { memo } from 'react';
 import { ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { COLORS } from '../config';
 
-const OEEGaugeCard = memo(({ value, target }) => {
+const OEEGaugeCard = memo(({ value, target, title = "OEE Global" }) => {
     const safeValue = isNaN(value) ? 0 : value;
     const isOk = safeValue >= target;
     const color = isOk ? COLORS.green : COLORS.red;
@@ -15,7 +15,7 @@ const OEEGaugeCard = memo(({ value, target }) => {
     return (
         <div className="bg-white rounded-xl border-l-4 shadow-[0_2px_10px_rgba(0,0,0,0.06)] h-full flex flex-col relative" style={{ borderLeftColor: color }}>
             <div className="absolute top-3 left-4 z-10">
-                <p className="text-[10px] font-bold uppercase tracking-wider mb-1 text-slate-400">OEE Máquinas</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-1 text-slate-400">{title}</p>
             </div>
 
             <div className="flex-1 flex items-center justify-center relative">
