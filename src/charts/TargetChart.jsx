@@ -3,12 +3,22 @@ import { ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, CartesianG
 import { Card } from '../components/UI';
 import { COLORS } from '../config';
 
-const TargetChart = memo(({ data, dataKey, target, title, colorLine, yMax = 110, onBarClick, selectedKey }) => {
+const TargetChart = memo(({ data, dataKey, target, title, colorLine, value, yMax = 110, onBarClick, selectedKey }) => {
+    const isTargetMet = value !== undefined && value >= target;
+    const borderColor = value !== undefined ? (isTargetMet ? COLORS.green : COLORS.red) : colorLine;
+
     return (
-        <Card className="p-3 h-full flex flex-col cursor-pointer transition hover:border-slate-300 group border-t-4" style={{ borderTopColor: colorLine }}>
+        <Card className="p-3 h-full flex flex-col cursor-pointer transition hover:border-slate-300 group border-t-4" style={{ borderTopColor: borderColor }}>
             <div className="flex justify-between items-center mb-1">
                 <h3 className="text-xs font-bold uppercase text-slate-600 group-hover:text-blue-600 transition-colors">{title}</h3>
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">Meta: {target}%</span>
+                <div className="flex gap-1">
+                    {value !== undefined && (
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isTargetMet ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            {value}%
+                        </span>
+                    )}
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">Meta: {target}%</span>
+                </div>
             </div>
             <div className="flex-1 min-h-0">
                 <ResponsiveContainer width="100%" height="100%">

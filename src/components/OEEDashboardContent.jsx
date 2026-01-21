@@ -271,6 +271,7 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                         <>
                             <button onClick={() => setLossesSubTab('overview')} className={`px-3 md:px-4 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${lossesSubTab === 'overview' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Visão Geral</button>
                             <button onClick={() => setLossesSubTab('availability')} className={`px-3 md:px-4 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${lossesSubTab === 'availability' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Aderência Disp.</button>
+                            <button onClick={() => setLossesSubTab('utilization')} className={`px-3 md:px-4 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${lossesSubTab === 'utilization' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Aderência Utiliz.</button>
                         </>
                     )}
                     {activeTab === 'reliability' && <span className="px-3 py-1.5 text-xs font-bold text-orange-600">Confiabilidade</span>}
@@ -827,6 +828,56 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                                             </div>
                                         </div>
 
+                                        {/* Performance Sub-Charts Row */}
+                                        <div className="w-full max-w-6xl px-2 mb-8">
+                                            <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider text-center mb-3">Desdobramento Performance</h4>
+                                            <div className={`grid gap-4 ${areaMode === 'maquinas' ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-1 md:grid-cols-2'}`}>
+                                                {/* UF - Utilização Física */}
+                                                <div className="h-[200px]">
+                                                    <TargetChart
+                                                        data={calculatedData.map(d => ({ ...d, UF_pct: parseFloat(((d.UF || 0) * 100).toFixed(1)) }))}
+                                                        dataKey="UF_pct"
+                                                        value={activeAggregates.UF}
+                                                        target={areaMode === 'maquinas' ? 93.75 : 93.33}
+                                                        title="UTILIZAÇÃO (UF)"
+                                                        colorLine={COLORS.blue}
+                                                        yMax={120}
+                                                    />
+                                                </div>
+
+                                                {/* ADFN/ADTX - Aderência ao Ritmo */}
+                                                <div className="h-[200px]">
+                                                    <TargetChart
+                                                        data={calculatedData.map(d => ({
+                                                            ...d,
+                                                            AD_RITMO_pct: parseFloat(((areaMode === 'maquinas' ? (d.ADFN || 0) : (d.ADTX || 0)) * 100).toFixed(1))
+                                                        }))}
+                                                        dataKey="AD_RITMO_pct"
+                                                        value={areaMode === 'maquinas' ? activeAggregates.ADFN : activeAggregates.ADTX}
+                                                        target={areaMode === 'maquinas' ? 88.8 : 100}
+                                                        title={areaMode === 'maquinas' ? "AD. RITMO (ADFN)" : "AD. RITMO (ADTX)"}
+                                                        colorLine={COLORS.yellow}
+                                                        yMax={120}
+                                                    />
+                                                </div>
+
+                                                {/* AVOL - Aderência ao Volume (only for Máquinas) */}
+                                                {areaMode === 'maquinas' && (
+                                                    <div className="h-[200px]">
+                                                        <TargetChart
+                                                            data={calculatedData.map(d => ({ ...d, AVOL_pct: parseFloat(((d.AVOL || 0) * 100).toFixed(1)) }))}
+                                                            dataKey="AVOL_pct"
+                                                            value={activeAggregates.AVOL}
+                                                            target={94.14}
+                                                            title="AD. VOLUME (AVOL)"
+                                                            colorLine={COLORS.green}
+                                                            yMax={120}
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
                                         {/* Tabela OEE Detalhado abaixo da árvore */}
                                         <div className="w-full max-w-6xl mt-6 px-2">
                                             <Card className="p-4">
@@ -960,13 +1011,13 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                             </div>
                         ) : (
                             <div className="h-full flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                                <div className="h-full flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                                    <AvailabilityCausesChart
-                                        data={calculatedData}
-                                        rawData={activeRawData}
-                                        target={activeTargets.AVAIL}
-                                    />
-                                </div>
+                                <AvailabilityCausesChart
+                                    data={calculatedData}
+                                    rawData={activeRawData}
+                                    target={lossesSubTab === 'availability' ? activeTargets.AVAIL : activeTargets.PERF}
+                                    type={lossesSubTab === 'availability' ? 'availability' : 'utilization'}
+                                    areaMode={areaMode}
+                                />
                             </div>
                         )}
                     </div>

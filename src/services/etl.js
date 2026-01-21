@@ -1036,6 +1036,10 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
         avail: (availGlobal * 100).toFixed(1),
         perf: (perfGlobal * 100).toFixed(1),
         qual: (qualGlobal * 100).toFixed(2),
+        UF: (UF_Global * 100).toFixed(1),
+        ADFN: (ADFN_Global * 100).toFixed(1),
+        AVOL: (AVOL_Global * 100).toFixed(1),
+        ADTX: (ADTX_Global * 100).toFixed(1),
         water: sum('water').toFixed(0),
         ovensNumeric: totalOvens,
         ovensDisplay: totalOvens.toLocaleString('pt-BR'),
@@ -1186,7 +1190,10 @@ export const calculateJackKnifeData = (rawData, dateRange) => {
 
     const equipMap = {};
     validStops.forEach(s => {
-        const equip = s.equip || "Sem Tag";
+        // Skip stops without equip tag (these are typically janela/window stops)
+        if (!s.equip || s.equip.trim() === '') return;
+
+        const equip = s.equip;
         if (!equipMap[equip]) equipMap[equip] = { name: equip, frequency: 0, totalDuration: 0 };
         equipMap[equip].frequency += 1;
         equipMap[equip].totalDuration += s.duration;
@@ -1196,8 +1203,12 @@ export const calculateJackKnifeData = (rawData, dateRange) => {
 
     const compMap = {};
     validStops.forEach(s => {
-        const equip = s.equip || "Sem Tag";
-        const comp = s.comp || "Geral";
+        // Skip stops without equip or comp tag (these are typically janela/window stops)
+        if (!s.equip || s.equip.trim() === '') return;
+        if (!s.comp || s.comp.trim() === '') return;
+
+        const equip = s.equip;
+        const comp = s.comp;
         const key = `${equip} | ${comp}`;
         if (!compMap[key]) compMap[key] = { name: key, compName: comp, parentEquip: equip, frequency: 0, totalDuration: 0 };
         compMap[key].frequency += 1;
@@ -1418,7 +1429,7 @@ export const calculateParetoData = (rawData, dateRange, filterSelection, aggrega
         }
 
         // Filtros interativos de equipamento e disciplina (Array ou String)
-        const equipLabel = s.equip && s.equip !== '' ? s.equip : "Sem Tag";
+        const equipLabel = s.equip && s.equip.trim() !== '' ? s.equip : null;
         const disciplinaLabel = s.disciplina && s.disciplina !== '' ? s.disciplina : "Sem Disciplina";
 
         if (equipmentFilter) {
@@ -1437,15 +1448,18 @@ export const calculateParetoData = (rawData, dateRange, filterSelection, aggrega
             }
         }
 
-        reasonsEquip[equipLabel] = (reasonsEquip[equipLabel] || 0) + s.duration;
+        // Only add to equipments pareto if equip tag exists
+        if (equipLabel) {
+            reasonsEquip[equipLabel] = (reasonsEquip[equipLabel] || 0) + s.duration;
+        }
         reasonsDisciplina[disciplinaLabel] = (reasonsDisciplina[disciplinaLabel] || 0) + s.duration;
 
-        let causeLabel = "Não identificado";
-        if (s.comp || s.modo) causeLabel = `${s.comp || '?'} - ${s.modo || '?'}`;
-        else causeLabel = s.desc || s.tipo || "Geral";
-
-        if (causeLabel.length > 35) causeLabel = causeLabel.substring(0, 35) + '...';
-        reasonsCause[causeLabel] = (reasonsCause[causeLabel] || 0) + s.duration;
+        // Only add to causes pareto if comp or modo exists
+        if (s.comp && s.comp.trim() !== '') {
+            let causeLabel = s.modo ? `${s.comp} - ${s.modo}` : s.comp;
+            if (causeLabel.length > 35) causeLabel = causeLabel.substring(0, 35) + '...';
+            reasonsCause[causeLabel] = (reasonsCause[causeLabel] || 0) + s.duration;
+        }
     });
 
     const processPareto = (obj) => Object.entries(obj)
