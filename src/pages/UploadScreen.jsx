@@ -9,12 +9,19 @@ export default function UploadScreen({ onDataReady }) {
     const [loading, setLoading] = useState(false);
     const [errorLog, setErrorLog] = useState("");
 
-    const [autoLoaded, setAutoLoaded] = useState(false);
+    const isPublicDomain = window.location.hostname.includes('netlify.app') || window.location.hostname.includes('github.io');
 
     const handleNetworkLoad = async () => {
         setLoading(true); setErrorLog("");
         try {
+            if (isPublicDomain) {
+                throw new Error("O carregamento automático não está disponível em domínios públicos (Netlify). Use o Upload Manual ou execute o app na Intranet da empresa.");
+            }
+
             const res = await fetch('/api/load-network-files');
+            if (res.status === 404) {
+                throw new Error("Serviço de rede não encontrado. Se estiver na Intranet, certifique-se de que o servidor Node.js está rodando.");
+            }
             if (!res.ok) throw new Error(`Falha na conexão (${res.status})`);
 
             const json = await res.json();
@@ -48,7 +55,7 @@ export default function UploadScreen({ onDataReady }) {
             setAutoLoaded(true);
         } catch (e) {
             console.error(e);
-            setErrorLog("Erro ao carregar da rede: " + e.message);
+            setErrorLog(e.message);
         } finally {
             setLoading(false);
         }

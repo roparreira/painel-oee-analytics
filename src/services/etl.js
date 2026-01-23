@@ -88,23 +88,26 @@ export const processFiles = async (fileStop, fileProd, fileDespacho = null, file
     const headStop = rowsStop[hIdx].map(h => String(h).trim().toLowerCase());
     const idxS = {
         proc: headStop.findIndex(h => h.includes('processo')),
-        linha: headStop.findIndex(h => h.includes('linha')),
+        linha: headStop.findIndex(h => h.includes('linha') || h.includes('zona')),
         parou: headStop.findIndex(h => h.includes('parou')),
         inicio: headStop.findIndex(h => h.includes('início') || h.includes('inicio')),
         fim: headStop.findIndex(h => h.includes('fim')),
-        area: headStop.findIndex(h => h.includes('área') || h.includes('responsável')),
-        tipo: headStop.findIndex(h => h.includes('tipo')),
-        desc: headStop.findIndex(h => h.includes('descrição')),
+        area: headStop.findIndex(h => h.includes('área') || h.includes('responsável') || h.includes('departamento')),
+        tipo: headStop.findIndex(h => h.includes('tipo') || h.includes('categoria')),
+        desc: headStop.findIndex(h => h.includes('descrição') || h.includes('descricao')),
         equip: headStop.findIndex(h => h.includes('equipamento') || h.includes('tag')),
         comp: headStop.findIndex(h => h.includes('componente') || h.includes('causa')),
         modo: headStop.findIndex(h => h.includes('modo') || h.includes('desvio') || h.includes('falha')),
         bateria: headStop.findIndex(h => h.includes('bateria') || h.includes('local') || h.includes('área executante')),
         quench: headStop.findIndex(h => h.includes('quench')),
-        dataProd: headStop.findIndex(h => h.includes('data de produção') || h.includes('data de producao')), // Coluna Z
+        dataProd: headStop.findIndex(h => h.includes('data de produção') || h.includes('data de producao') || h.includes('data produ')), // Coluna Z
         disciplina: headStop.findIndex(h => h.includes('disciplina')) // Coluna R
     };
     if (idxS.quench === -1) idxS.quench = 5;
-    if (idxS.dataProd === -1) idxS.dataProd = 25; // Coluna Z = índice 25
+    if (idxS.dataProd === -1) {
+        // Tentar encontrar por posição se o nome falhar (Coluna Z é índice 25)
+        if (headStop.length > 25) idxS.dataProd = 25;
+    }
 
     const cleanStops = [];
     const cleanStopsPatio = [];
@@ -126,19 +129,21 @@ export const processFiles = async (fileStop, fileProd, fileDespacho = null, file
 
         // Identificar tipo de dado (Lógica Robustecida)
         const isMaquina = valProc.includes('maquina') || valProc.includes('máquina');
-        const isPatioProc = valProc.includes('patio') || valProc.includes('pátio');
+        const isPatioKeyword = valProc.includes('patio') || valProc.includes('pátio');
 
         // Detecção de zona (Envio vs Recebimento)
-        // Verifica Linha, Processo e Área para maior flexibilidade
-        const isEnvio = valLinha.includes('envio') || valProc.includes('envio') || valArea.includes('envio');
-        const isRecebimento = valLinha.includes('recebimento') || valProc.includes('recebimento') || valArea.includes('recebimento');
+        const isEnvio = valLinha.includes('envio') || valProc.includes('envio') || valArea.includes('envio') ||
+            valLinha.includes('expedi') || valProc.includes('expedi') || valArea.includes('expedi');
 
-        const isPatioEnvio = isPatioProc && isEnvio;
-        const isPatioReceb = isPatioProc && isRecebimento;
+        const isRecebimento = valLinha.includes('recebimento') || valProc.includes('recebimento') || valArea.includes('recebimento') ||
+            valLinha.includes('descarga') || valProc.includes('descarga') || valArea.includes('descarga') ||
+            valLinha.includes('recep') || valProc.includes('recep') || valArea.includes('recep');
+
+        const isPatioEnvio = (isPatioKeyword || isEnvio) && !isMaquina;
+        const isPatioReceb = (isPatioKeyword || isRecebimento) && !isMaquina;
 
         // Ignorar se não for nenhum dos tipos conhecidos
         if (!isMaquina && !isPatioEnvio && !isPatioReceb) {
-            ignored.push({ row: i + 1, reason: `Ignorado: Proc='${valProc}', Linha='${valLinha}'` });
             continue;
         }
 
@@ -151,7 +156,13 @@ export const processFiles = async (fileStop, fileProd, fileDespacho = null, file
         let dateStr;
         if ((isPatioProc && isEnvio) || (isPatioProc && isRecebimento)) {
             const dataProdVal = parseDate(r[idxS.dataProd]);
-            dateStr = dataProdVal ? formatDateISO(dataProdVal) : null;
+            if (dataProdVal) {
+                dateStr = formatDateISO(dataProdVal);
+            } else {
+                // FALLBACK: Se Coluna Z estiver vazia, tenta usar a data de início (com lógica de virada de dia)
+                const prodDate = getProductionDate(start);
+                dateStr = formatDateISO(prodDate);
+            }
         } else {
             const prodDate = getProductionDate(start);
             dateStr = formatDateISO(prodDate);
@@ -970,18 +981,29 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
             };
 
             // 3. Calcular Bridge do Dia
+            const dayBVSL = (SLM_Daily - SLR_Daily) * TLIQ_Daily;
+            const dayBIND = (PNPM_Daily - PNPR_Daily) * TLIQ_Daily;
+            const dayBPOP = (POM_Daily - POR_Daily) * TLIQ_Daily;
+            const dayBPRT = (TLIQR_Daily - TLIQ_Daily) * TLR_Daily;
+
+            if (dateStr === '2026-01-08') {
+                console.log(`[DEBUG 08/01] Diário: VR=${VR_Daily}, PPR=${PPR_Daily}, PNPR=${PNPR_Daily}, POR=${POR_Daily}`);
+                console.log(`[DEBUG 08/01] Metas: SLM=${SLM_Daily}, PNPM=${PNPM_Daily}, POM=${POM_Daily}, TLIQ=${TLIQ_Daily.toFixed(2)}`);
+                console.log(`[DEBUG 08/01] Reais: SLR=${SLR_Daily}, PNPR=${PNPR_Daily}, POR=${POR_Daily}, TLR=${TLR_Daily.toFixed(2)}, TLIQR=${TLIQR_Daily.toFixed(2)}`);
+                console.log(`[DEBUG 08/01] Bridge: BVSL=${dayBVSL.toFixed(0)}, BIND=${dayBIND.toFixed(0)}, BPOP=${dayBPOP.toFixed(0)}, BPRT=${dayBPRT.toFixed(0)}`);
+            }
+
             // BVSL = (SLM-SLR)*TLIQ
-            bridgeSL_Vol = safeAdd(bridgeSL_Vol, (SLM_Daily - SLR_Daily) * TLIQ_Daily);
+            bridgeSL_Vol = safeAdd(bridgeSL_Vol, dayBVSL);
 
             // BIND = (PNPM-PNPR)*TLIQ
-            bridgeInd_Vol = safeAdd(bridgeInd_Vol, (PNPM_Daily - PNPR_Daily) * TLIQ_Daily);
+            bridgeInd_Vol = safeAdd(bridgeInd_Vol, dayBIND);
 
             // BPOP = (POM-POR)*TLIQ
-            bridgeOp_Vol = safeAdd(bridgeOp_Vol, (POM_Daily - POR_Daily) * TLIQ_Daily);
+            bridgeOp_Vol = safeAdd(bridgeOp_Vol, dayBPOP);
 
             // BPRT = (TLIQR-TLIQ)*TLR (Impacto da Taxa)
-            // (TaxaReal - TaxaMeta) * TempoLiquidoReal
-            bridgeTaxa_Vol = safeAdd(bridgeTaxa_Vol, (TLIQR_Daily - TLIQ_Daily) * TLR_Daily);
+            bridgeTaxa_Vol = safeAdd(bridgeTaxa_Vol, dayBPRT);
         }
 
         const TLIQ_Weighted = totalTLM > 0 ? (totalVM / totalTLM) : 0;
