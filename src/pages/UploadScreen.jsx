@@ -11,26 +11,48 @@ export default function UploadScreen({ onDataReady }) {
 
     const [autoLoaded, setAutoLoaded] = useState(false);
 
-    // Auto-load Despacho Bot Data
-    React.useEffect(() => {
-        fetch('/despacho_auto.xlsx')
-            .then(res => {
-                if (res.ok) return res.blob();
-                throw new Error('No auto-sync file');
-            })
-            .then(blob => {
-                const file = new File([blob], "despacho_auto.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-                setFiles(prev => {
-                    // Only update if not already set (or if we want to overwrite default)
-                    if (!prev.despacho) return { ...prev, despacho: file };
-                    return prev;
-                });
-                setAutoLoaded(true);
-            })
-            .catch(() => {
-                // Ignore 404
-            });
-    }, []);
+    const handleNetworkLoad = async () => {
+        setLoading(true); setErrorLog("");
+        try {
+            const res = await fetch('/api/load-network-files');
+            if (!res.ok) throw new Error(`Falha na conexão (${res.status})`);
+
+            const json = await res.json();
+            if (!json.success) throw new Error(json.error || "Falha ao carregar arquivos");
+
+            const f = json.files;
+            const newFiles = { ...files };
+
+            // Helper para converter base64 em File
+            const b64toFile = (b64, name) => {
+                const byteCharacters = atob(b64);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                return new File([byteArray], name);
+            };
+
+            if (f.stop) newFiles.stop = b64toFile(f.stop.data, f.stop.name);
+
+            const prodFiles = [];
+            if (f.prod_25) prodFiles.push(b64toFile(f.prod_25.data, f.prod_25.name));
+            if (f.prod_26) prodFiles.push(b64toFile(f.prod_26.data, f.prod_26.name));
+            if (prodFiles.length > 0) newFiles.prod = prodFiles;
+
+            if (f.despacho) newFiles.despacho = b64toFile(f.despacho.data, f.despacho.name);
+            if (f.recebimento) newFiles.recebimento = b64toFile(f.recebimento.data, f.recebimento.name);
+
+            setFiles(newFiles);
+            setAutoLoaded(true);
+        } catch (e) {
+            console.error(e);
+            setErrorLog("Erro ao carregar da rede: " + e.message);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleProcess = async () => {
         if (!files.stop || !files.prod) return alert("Selecione os arquivos obrigatórios.");
@@ -44,9 +66,19 @@ export default function UploadScreen({ onDataReady }) {
     return (
         <div className="h-full flex items-center justify-center animate-fade-in">
             <Card className="p-10 max-w-4xl w-full">
-                <h2 className="text-lg font-bold mb-8 flex items-center gap-2 text-slate-700">
-                    <Database className="text-orange-600" /> Carregar dados
-                </h2>
+                <div className="flex justify-between items-center mb-8">
+                    <h2 className="text-lg font-bold flex items-center gap-2 text-slate-700">
+                        <Database className="text-orange-600" /> Carregar dados
+                    </h2>
+                    <button
+                        onClick={handleNetworkLoad}
+                        className="bg-orange-100 hover:bg-orange-200 text-orange-700 px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-2"
+                        title="Carregar arquivos da rede (W:)"
+                    >
+                        <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+                        Carregar Automático (Rede)
+                    </button>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
 
                     {/* GPMW (Apontamentos) - Obrigatório */}

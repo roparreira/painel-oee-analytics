@@ -20,7 +20,7 @@ const CustomTooltip = ({ active, payload, label }) => {
     return null;
 };
 
-const WindowHoursChart = ({ data, title = "Horas de Janela por Período" }) => {
+const WindowHoursChart = ({ data, title = "Horas de Janela por Período", areaMode = 'maquinas' }) => {
     if (!data || data.length === 0) {
         return (
             <Card className="h-full flex items-center justify-center bg-slate-50 border-dashed">
@@ -45,7 +45,7 @@ const WindowHoursChart = ({ data, title = "Horas de Janela por Período" }) => {
                 <div className="flex gap-4 text-[10px]">
                     <div className="flex items-center gap-1">
                         <div className="w-3 h-3 rounded bg-green-500"></div>
-                        <span className="text-slate-500">5h (±10min)</span>
+                        <span className="text-slate-500">{areaMode === 'maquinas' ? '5h (±10min)' : 'Meta (±10min)'}</span>
                     </div>
                     <div className="flex items-center gap-1">
                         <div className="w-3 h-3 rounded bg-red-500"></div>
@@ -76,23 +76,25 @@ const WindowHoursChart = ({ data, title = "Horas de Janela por Período" }) => {
                         <Tooltip content={<CustomTooltip />} />
                         <ReferenceLine y={5} stroke="#22c55e" strokeDasharray="5 5" strokeWidth={2} label={{ value: 'Meta 5h', position: 'right', fontSize: 10, fill: '#22c55e' }} />
 
-                        {/* Barra Quench Sul */}
-                        <Bar dataKey="hoursSul" name="Quench Sul" stackId={false} barSize={20}>
-                            {chartData.map((entry, index) => (
-                                <Cell key={`sul-${index}`} fill={entry.colorSul} />
-                            ))}
-                            <LabelList dataKey="hoursSul" position="inside" content={({ x, y, width, height }) => (
-                                <text x={x + width / 2} y={y + height / 2} fill="#fff" textAnchor="middle" dominantBaseline="middle" fontSize={9} fontWeight="bold">QS</text>
-                            )} />
-                        </Bar>
+                        {/* Barra Quench Sul - Only for Maquinas */}
+                        {areaMode === 'maquinas' && (
+                            <Bar dataKey="hoursSul" name="Quench Sul" stackId={false} barSize={20}>
+                                {chartData.map((entry, index) => (
+                                    <Cell key={`sul-${index}`} fill={entry.colorSul} />
+                                ))}
+                                <LabelList dataKey="hoursSul" position="inside" content={({ x, y, width, height }) => (
+                                    <text x={x + width / 2} y={y + height / 2} fill="#fff" textAnchor="middle" dominantBaseline="middle" fontSize={9} fontWeight="bold">QS</text>
+                                )} />
+                            </Bar>
+                        )}
 
-                        {/* Barra Quench Norte */}
-                        <Bar dataKey="hoursNorte" name="Quench Norte" stackId={false} barSize={20}>
+                        {/* Barra Quench Norte (or Generic Programada for Patio) */}
+                        <Bar dataKey="hoursNorte" name={areaMode === 'maquinas' ? "Quench Norte" : "Parada Prog."} stackId={false} barSize={20}>
                             {chartData.map((entry, index) => (
-                                <Cell key={`norte-${index}`} fill={entry.colorNorte} opacity={0.7} />
+                                <Cell key={`norte-${index}`} fill={entry.colorNorte} opacity={areaMode === 'maquinas' ? 0.7 : 1} />
                             ))}
                             <LabelList dataKey="hoursNorte" position="inside" content={({ x, y, width, height }) => (
-                                <text x={x + width / 2} y={y + height / 2} fill="#fff" textAnchor="middle" dominantBaseline="middle" fontSize={9} fontWeight="bold">QN</text>
+                                <text x={x + width / 2} y={y + height / 2} fill="#fff" textAnchor="middle" dominantBaseline="middle" fontSize={9} fontWeight="bold">{areaMode === 'maquinas' ? 'QN' : 'PP'}</text>
                             )} />
                         </Bar>
 

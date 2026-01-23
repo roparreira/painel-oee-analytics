@@ -11,14 +11,16 @@ export default function DashboardScreen({ rawData, initialDateRange, areaMode, s
 
     // Handler para mudar de módulo
     const handleModuleChange = (moduleId) => {
-        setActiveModule(moduleId);
-        // Definir subtab padrão ao trocar de módulo
-        if (moduleId === 'oee') {
-            setActiveSubTab('overview');
-        } else if (moduleId === 'failures') {
-            setActiveSubTab('rcfas');
-        } else if (moduleId === 'tbm') {
-            setActiveSubTab('tbm_dashboard');
+        if (moduleId !== activeModule) {
+            setActiveModule(moduleId);
+            // Definir subtab padrão ao trocar de módulo
+            if (moduleId === 'oee') {
+                setActiveSubTab('overview');
+            } else if (moduleId === 'failures') {
+                setActiveSubTab('rcfas');
+            } else if (moduleId === 'tbm') {
+                setActiveSubTab('tbm_dashboard');
+            }
         }
     };
 

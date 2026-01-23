@@ -43,7 +43,7 @@ export default function App() {
   const handleConfirmAudit = () => {
     const dates = Object.keys(rawData.prod).sort();
     if (dates.length > 0) {
-      const start = dates[0];
+      const start = '2026-01-01';
       const today = new Date();
       today.setDate(today.getDate() - 1);
       const yesterdayIso = formatDateISO(today);

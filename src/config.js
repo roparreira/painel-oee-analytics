@@ -40,7 +40,7 @@ export const BUSINESS_CONSTANTS_PATIO = {
 
     // FRANQUIAS
     PNPM: 3,           // Paradas Não Programadas Meta: 3h por dia
-    POM: 1,            // Perda Operacional Meta: 1h por dia
+    POM: 2,            // Perda Operacional Meta: 2h por dia
 
     // PRODUÇÃO FÍSICA / TAXA
     VOL_META: 4188,    // Volume Meta (toneladas por dia)

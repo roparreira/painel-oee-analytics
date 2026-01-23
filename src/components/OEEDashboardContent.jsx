@@ -19,7 +19,7 @@ import OEEExplanation from './OEEExplanation';
 
 export default function OEEDashboardContent({ rawData, initialDateRange, areaMode, setAreaMode, activeTab = 'overview', setActiveTab }) {
     // activeTab is now received from props (controlled by Sidebar)
-    const [activeReliabilitySubTab, setActiveReliabilitySubTab] = useState('weibull');
+    const [activeReliabilitySubTab, setActiveReliabilitySubTab] = useState('jackknife');
     const [aggregation, setAggregation] = useState('day');
     const [dateRange, setDateRange] = useState(initialDateRange);
     const [validatedDateRange, setValidatedDateRange] = useState(initialDateRange); // Estado validado para cálculos
@@ -179,7 +179,7 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
     }, [activeRawData, weibullEquipmentFilter]);
 
     const windowHoursData = useMemo(() => {
-        return calculateWindowHoursData(activeRawData, validatedDateRange, aggregation);
+        return calculateWindowHoursData(activeRawData, validatedDateRange, aggregation, areaMode);
     }, [activeRawData, validatedDateRange, aggregation]);
 
 
@@ -476,9 +476,9 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                                     {/* MÁQUINAS: Dentro Horário */}
                                     <div className="col-span-1 h-32"><CheckCardDual title="Dentro Horário" valNorte={activeAggregates.winInsideOkNorte} totalNorte={activeAggregates.daysWithStopNorte} valSul={activeAggregates.winInsideOkSul} totalSul={activeAggregates.daysWithStopSul} sub="Entre 08h-17h" icon={Maximize} /></div>
                                     {/* MÁQUINAS: Pontualidade Início */}
-                                    <div className="col-span-1 h-32"><CheckCardDual title="Pontualidade Início" valNorte={activeAggregates.winStartOkNorte} totalNorte={activeAggregates.daysWithStopNorte} valSul={activeAggregates.winStartOkSul} totalSul={activeAggregates.daysWithStopSul} sub="Início 08:00 ±15m" icon={PlayCircle} /></div>
+                                    <div className="col-span-1 h-32"><CheckCardDual title="Pontualidade Início" valNorte={activeAggregates.winStartOkNorte} totalNorte={activeAggregates.daysWithStopNorte} valSul={activeAggregates.winStartOkSul} totalSul={activeAggregates.daysWithStopSul} sub="Início 08:00 (-15min / +1h)" icon={PlayCircle} /></div>
                                     {/* MÁQUINAS: Pontualidade Fim */}
-                                    <div className="col-span-1 h-32"><CheckCardDual title="Pontualidade Fim" valNorte={activeAggregates.winEndOkNorte} totalNorte={activeAggregates.daysWithStopNorte} valSul={activeAggregates.winEndOkSul} totalSul={activeAggregates.daysWithStopSul} sub="Término 13:00 ±15m" icon={StopCircle} /></div>
+                                    <div className="col-span-1 h-32"><CheckCardDual title="Pontualidade Fim" valNorte={activeAggregates.winEndOkNorte} totalNorte={activeAggregates.daysWithStopNorte} valSul={activeAggregates.winEndOkSul} totalSul={activeAggregates.daysWithStopSul} sub="Término 13:00 (-15min / +1h)" icon={StopCircle} /></div>
                                 </>
                             ) : (
                                 <>
@@ -544,7 +544,7 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                                                     <span className="text-[8px] text-slate-400 font-bold uppercase">Outros</span>
                                                 </div>
                                             </div>
-                                            <p className="text-[8px] text-slate-400 text-center">Início 08:00 ±15min</p>
+                                            <p className="text-[8px] text-slate-400 text-center">Início 08:00 (-15min / +1h)</p>
                                         </Card>
                                     </div>
                                     {/* PÁTIO: Pontualidade Fim */}
@@ -565,7 +565,7 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                                                     <span className="text-[8px] text-slate-400 font-bold uppercase">Outros</span>
                                                 </div>
                                             </div>
-                                            <p className="text-[8px] text-slate-400 text-center">Qui: 16:00 | Outros: 12:00 ±15min</p>
+                                            <p className="text-[8px] text-slate-400 text-center">Qui: 16:00 | Outros: 12:00 (-15min / +1h)</p>
                                         </Card>
                                     </div>
                                 </>
@@ -573,7 +573,7 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
 
                             {/* Gráfico de Barras - Horas de Janela por Período */}
                             <div className="col-span-1 md:col-span-2 2xl:col-span-6 mt-4 h-80">
-                                <WindowHoursChart data={windowHoursData} title={areaMode === 'maquinas' ? "Horas de Janela por Período (Norte x Sul)" : "Horas de Parada Programada por Período"} />
+                                <WindowHoursChart data={windowHoursData} title={areaMode === 'maquinas' ? "Horas de Janela por Período (Norte x Sul)" : "Horas de Parada Programada por Período"} areaMode={areaMode} />
                             </div>
                         </div>
                     </div>
@@ -616,7 +616,10 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                                         const colorVol = getColorHigher(volActual, volTarget);
 
                                         const ritmoActual = activeAggregates.ritmoMin || 0;
-                                        const ritmoTarget = 18.75;
+                                        // Use dynamic bridgeMeta if available (Machines with Daily Targets), otherwise fallback to constants
+                                        const ritmoTarget = (activeAggregates.bridgeMeta && activeAggregates.bridgeMeta.FM > 0)
+                                            ? (activeAggregates.bridgeMeta.LT / activeAggregates.bridgeMeta.FM)
+                                            : ((BUSINESS_CONSTANTS.TC_META - BUSINESS_CONSTANTS.SL_META) * 60) / BUSINESS_CONSTANTS.FN_META;
                                         const ritmoPct = ritmoTarget > 0 ? ((ritmoActual / ritmoTarget) * 100).toFixed(0) : 0;
                                         const colorRitmo = getColorLower(ritmoActual, ritmoTarget);
 

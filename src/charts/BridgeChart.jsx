@@ -57,18 +57,22 @@ const BridgeChart = memo(({ aggregates, areaMode = 'maquinas' }) => {
             meta = Math.round(bm.VM);
             actual = Math.round(br.VR);
 
-            // Fórmulas da Bridge em Volume (toneladas)
-            // BVSL = (SLM - SLR) * TLIQ  ->  Volume perdido por Schedule Loss
-            const BVSL = Math.round((bm.SLM - br.SLR) * bm.TLIQ);
+            // Valores calculados no ETL (soma dos impactos diários)
+            // Se existirem as bridgeValues prontas, usa. Senão, fallback (compatibilidade)
+            let BVSL, BIND, BPOP, BPRT;
 
-            // BIND = (PNPM - PNPR) * TLIQ  ->  Volume perdido por Indisponibilidade
-            const BIND = Math.round((bm.PNPM - br.PNPR) * bm.TLIQ);
-
-            // BPOP = (POM - POR) * TLIQ  ->  Volume perdido por Perda Operacional
-            const BPOP = Math.round((bm.POM - br.POR) * bm.TLIQ);
-
-            // BPRT = (TLIQR - TLIQ) * TLR  ->  Volume perdido/ganho por Taxa
-            const BPRT = Math.round((br.TLIQR - bm.TLIQ) * br.TLR);
+            if (bm.bridgeValues) {
+                BVSL = Math.round(bm.bridgeValues.BVSL);
+                BIND = Math.round(bm.bridgeValues.BIND);
+                BPOP = Math.round(bm.bridgeValues.BPOP);
+                BPRT = Math.round(bm.bridgeValues.BPRT);
+            } else {
+                // Fallback (apenas se ETL não tiver atualizado ainda)
+                BVSL = Math.round((bm.SLM - br.SLR) * bm.TLIQ);
+                BIND = Math.round((bm.PNPM - br.PNPR) * bm.TLIQ);
+                BPOP = Math.round((bm.POM - br.POR) * bm.TLIQ);
+                BPRT = Math.round((br.TLIQR - bm.TLIQ) * br.TLR);
+            }
 
             let rawSteps = [
                 { name: 'Ausência Janela', val: BVSL, type: 'sl' },     // Positivo = ganho (menos paradas)
@@ -193,13 +197,13 @@ const BridgeChart = memo(({ aggregates, areaMode = 'maquinas' }) => {
 
     return (
         <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} margin={{ top: 20, right: 10, left: 0, bottom: 5 }}>
+            <BarChart key={areaMode} data={data} margin={{ top: 20, right: 10, left: 0, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: '#64748B' }} interval={0} dy={5} />
                 <Tooltip
                     cursor={{ fill: 'rgba(0,0,0,0.03)' }}
-                    content={({ payload }) => {
-                        if (!payload || payload.length === 0) return null;
+                    content={({ active, payload }) => {
+                        if (!active || !payload || payload.length === 0) return null;
                         const d = payload[1] ? payload[1].payload : payload[0].payload;
                         return (
                             <div className="bg-white p-2 border border-slate-100 shadow-xl rounded text-xs">
@@ -212,10 +216,10 @@ const BridgeChart = memo(({ aggregates, areaMode = 'maquinas' }) => {
                 <ReferenceLine y={0} stroke="#000" />
                 <Bar dataKey="base" stackId="a" fill="transparent" />
                 <Bar dataKey="value" stackId="a" radius={[2, 2, 2, 2]}>
-                    {data.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={getBarColor(entry)} />
+                    {data.map((entry) => (
+                        <Cell key={entry.name} fill={getBarColor(entry)} />
                     ))}
-                    <LabelList content={(props) => <BridgeLabel {...props} data={data} isPatio={isPatio} />} />
+                    <LabelList dataKey="label" content={(props) => <BridgeLabel {...props} data={data} isPatio={isPatio} />} />
                 </Bar>
             </BarChart>
         </ResponsiveContainer>

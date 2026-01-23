@@ -3,6 +3,7 @@ import {
     getMinutesInsideWindow, getAggregationKey, formatDateDisplay, formatDuration, dayjs
 } from '../utils';
 import { TARGETS, TARGETS_PATIO, BUSINESS_CONSTANTS, BUSINESS_CONSTANTS_PATIO, BUSINESS_CONSTANTS_RECEBIMENTO, STEPPED_TARGETS_MAQUINAS, STEPPED_TARGETS_PATIO, STEPPED_TARGETS_RECEBIMENTO } from '../config';
+import { DAILY_MACHINE_TARGETS } from '../data/dailyTargets';
 
 // --- HELPERS DE REGRESSÃO (Para calcular Beta e Eta) ---
 const calculateLinearRegression = (data) => {
@@ -39,20 +40,50 @@ const readExcelToArray = (file) => {
     });
 };
 
+// --- HELPER PARA CORRIGIR RANGE DO EXCEL (GPMW/Exportações que vêm com range errado) ---
+const updateSheetRange = (ws) => {
+    if (!ws || !window.XLSX || !window.XLSX.utils) return;
+
+    let range = { s: { c: 10000000, r: 10000000 }, e: { c: 0, r: 0 } };
+    let hasCells = false;
+
+    Object.keys(ws).forEach(cell => {
+        if (cell[0] === '!') return;
+        hasCells = true;
+        try {
+            const cellAddr = window.XLSX.utils.decode_cell(cell);
+            if (cellAddr.r < range.s.r) range.s.r = cellAddr.r;
+            if (cellAddr.c < range.s.c) range.s.c = cellAddr.c;
+            if (cellAddr.r > range.e.r) range.e.r = cellAddr.r;
+            if (cellAddr.c > range.e.c) range.e.c = cellAddr.c;
+        } catch (e) {
+            // Ignorar células inválidas
+        }
+    });
+
+    if (hasCells) {
+        ws['!ref'] = window.XLSX.utils.encode_range(range);
+    }
+};
+
 export const processFiles = async (fileStop, fileProd, fileDespacho = null, fileRecebimento = null) => {
     const ignored = [];
 
     // 1. Processar Apontamentos (Stops)
     const wbStop = await readExcelToArray(fileStop);
     const wsStop = wbStop.Sheets[wbStop.SheetNames.find(n => n.includes('Apont') || n.includes('Dados')) || wbStop.SheetNames[0]];
+
+    // CORREÇÃO CRÍTICA: Recalcular range para garantir que leia todas as linhas (fix para arquivos gerados automaticamente)
+    updateSheetRange(wsStop);
+
     const rowsStop = window.XLSX.utils.sheet_to_json(wsStop, { header: 1, defval: null });
 
     let hIdx = -1;
-    for (let i = 0; i < Math.min(rowsStop.length, 50); i++) {
+    for (let i = 0; i < Math.min(rowsStop.length, 200); i++) {
         const rStr = JSON.stringify(rowsStop[i]).toLowerCase();
         if (rStr.includes('processo') && (rStr.includes('duração') || rStr.includes('duracao'))) { hIdx = i; break; }
     }
-    if (hIdx === -1) throw new Error("Cabeçalho 'Processo' não encontrado no arquivo de paradas.");
+    if (hIdx === -1) throw new Error("Cabeçalho 'Processo' não encontrado no arquivo de paradas (verifique se está dentro das primeiras 200 linhas).");
 
     const headStop = rowsStop[hIdx].map(h => String(h).trim().toLowerCase());
     const idxS = {
@@ -88,18 +119,27 @@ export const processFiles = async (fileStop, fileProd, fileDespacho = null, file
         if (!r || r.length === 0) continue;
 
         const valProc = String(r[idxS.proc] || '').trim().toLowerCase();
-        const valLinha = String(r[idxS.linha] || '').trim().toLowerCase();
-        const valParou = String(r[idxS.parou] || '').trim().toLowerCase();
+        const getVal = (idx) => idx > -1 ? String(r[idx] || '').trim().toLowerCase() : '';
+        const valLinha = getVal(idxS.linha);
+        const valParou = getVal(idxS.parou);
+        const valArea = getVal(idxS.area);
 
-        // Identificar tipo de dado
+        // Identificar tipo de dado (Lógica Robustecida)
         const isMaquina = valProc.includes('maquina') || valProc.includes('máquina');
-        const isPatio = valProc.includes('patio') || valProc.includes('pátio');
-        const isEnvio = valLinha.includes('envio');
-        const isRecebimento = valLinha.includes('recebimento');
+        const isPatioProc = valProc.includes('patio') || valProc.includes('pátio');
 
-        // Ignorar se não for nem Máquina nem Pátio/Envio nem Pátio/Recebimento
-        if (!isMaquina && !(isPatio && isEnvio) && !(isPatio && isRecebimento)) {
-            ignored.push({ row: i + 1, reason: `Processo: ${valProc}, Linha: ${valLinha}` }); continue;
+        // Detecção de zona (Envio vs Recebimento)
+        // Verifica Linha, Processo e Área para maior flexibilidade
+        const isEnvio = valLinha.includes('envio') || valProc.includes('envio') || valArea.includes('envio');
+        const isRecebimento = valLinha.includes('recebimento') || valProc.includes('recebimento') || valArea.includes('recebimento');
+
+        const isPatioEnvio = isPatioProc && isEnvio;
+        const isPatioReceb = isPatioProc && isRecebimento;
+
+        // Ignorar se não for nenhum dos tipos conhecidos
+        if (!isMaquina && !isPatioEnvio && !isPatioReceb) {
+            ignored.push({ row: i + 1, reason: `Ignorado: Proc='${valProc}', Linha='${valLinha}'` });
+            continue;
         }
 
         const start = parseDate(r[idxS.inicio]);
@@ -109,7 +149,7 @@ export const processFiles = async (fileStop, fileProd, fileDespacho = null, file
 
         // Para Pátio (Envio/Recebimento): usar coluna Z (Data de Produção). Para Máquinas: calcular de início.
         let dateStr;
-        if ((isPatio && isEnvio) || (isPatio && isRecebimento)) {
+        if ((isPatioProc && isEnvio) || (isPatioProc && isRecebimento)) {
             const dataProdVal = parseDate(r[idxS.dataProd]);
             dateStr = dataProdVal ? formatDateISO(dataProdVal) : null;
         } else {
@@ -149,13 +189,13 @@ export const processFiles = async (fileStop, fileProd, fileDespacho = null, file
         }
 
         // Processar Pátio/Envio (independente de 'parou')
-        if (isPatio && isEnvio) {
+        if (isPatioProc && isEnvio) {
             totalStopDurationPatio += safeDuration;
             cleanStopsPatio.push(stopRecord);
         }
 
         // Processar Pátio/Recebimento (independente de 'parou')
-        if (isPatio && isRecebimento) {
+        if (isPatioProc && isRecebimento) {
             totalStopDurationRecebimento += safeDuration;
             cleanStopsRecebimento.push(stopRecord);
         }
@@ -412,6 +452,20 @@ export const calculateOEEData = (rawData, dateRange, aggregation, equipmentFilte
             }
         }
 
+        // --- DEFINIÇÃO DE METAS DIÁRIAS (OVERRIDE) ---
+        // Se houver meta específica no dailyTargets.js, usamos. Caso contrário, usamos a constante global.
+        let currentFN_Meta = BC.FN_META;
+        // Se for máquinas e tiver target diário, usa. Se for Pátio, não tem override de DailyTargets por enquanto.
+        // AVOL depends on VOL_META.
+        // Note: For Machines, VOL_META is Mass per Oven.
+        // For Daily Targets, user supplied "CARGA DESENFORNADA" which is Mass per Oven.
+        let currentVOL_Meta = BC.VOL_META;
+
+        if (!isPatio && DAILY_MACHINE_TARGETS[dateKey]) {
+            currentFN_Meta = DAILY_MACHINE_TARGETS[dateKey].fn;
+            currentVOL_Meta = DAILY_MACHINE_TARGETS[dateKey].vol;
+        }
+
         // Tempo Calendário baseado no modo
         const HOURS_PER_DAY = BC.TC_META;
         const TARGET_MAINT_MINS = isPatio ? BC.SL_META * 60 : 10 * 60;
@@ -532,8 +586,16 @@ export const calculateOEEData = (rawData, dateRange, aggregation, equipmentFilte
 
             perfFinal = UF * ADTX; // Pátio: sem AVOL
         } else {
-            // Máquinas: usa ADFN original
+
+            // Máquinas: usa ADFN e Targets dinâmicos
             const totalVolReal = p.wetCharge;
+            // Volume Teórico deve usar FN_THEORY e VOL_THEORY.
+            // Para efeitos de cálculo de OEE, assumimos que a Capacidade (Theory) não mudou, apenas a Meta.
+            // A menos que a redução de fornos seja por restrição operacional (que afeta capacidade?).
+            // Por segurança e consistência, mantemos Theory como constante global de capacidade máxima instalada.
+            // Se a meta baixou, AVOL vai subir (se realizarmos perto da meta, mas longe do teórico).
+            // A OEE mede eficiência contra a CAPACIDADE TOTAL.
+
             const totalVolTheory = BUSINESS_CONSTANTS.FN_THEORY * BUSINESS_CONSTANTS.VOL_THEORY;
             AVOL = totalVolTheory > 0 ? (totalVolReal / totalVolTheory) : 0;
             UF = operating > 0 ? (netOperating / operating) : 0;
@@ -579,7 +641,11 @@ export const calculateOEEData = (rawData, dateRange, aggregation, equipmentFilte
             targetMaint: TARGET_MAINT_MINS, usedMaint: totalUsedMaint, loadingMins, excessShift,
             AVOL, UF, ADFN, ADTX, netOperating, areaMode,
             // New Meta Fields for Bridge Aggregation
-            PPM_Meta, SLM_Meta, LTM_Meta, TLM_Meta, TLIQ_Meta, VM_Meta, thursdaysInPeriod, otherDaysInPeriod
+            PPM_Meta, SLM_Meta, LTM_Meta, TLM_Meta, TLIQ_Meta, VM_Meta, thursdaysInPeriod, otherDaysInPeriod,
+            // Armazenar metas diárias usadas (para Máquinas)
+            targetFN_Day: currentFN_Meta,
+            targetVOL_Day: currentVOL_Meta * currentFN_Meta, // Meta de volume TOTAL do dia
+            targetVOL_Meta_Unit: currentVOL_Meta // Meta unitária
         });
     });
 
@@ -592,7 +658,8 @@ export const calculateOEEData = (rawData, dateRange, aggregation, equipmentFilte
                 calendar: 0, loading: 0, operating: 0, netOperating: 0, lossDisp: 0, lossUtil: 0,
                 ovens: 0, wetCharge: 0, yieldSum: 0, yieldCount: 0, days: 0, water: 0,
                 failureLoss: 0, extMaint: 0, outsideMaint: 0, shiftChange: 0, opsLoss: 0, excessShift: 0,
-                totalUsedMaint: 0, loadingMins: 0
+                totalUsedMaint: 0, loadingMins: 0,
+                targetFN_Sum: 0, targetVOL_Sum: 0
             };
         }
         const g = grouped[key];
@@ -605,6 +672,8 @@ export const calculateOEEData = (rawData, dateRange, aggregation, equipmentFilte
         g.failureLoss += day.failureLoss; g.extMaint += day.extMaint; g.outsideMaint += day.outsideMaint;
         g.shiftChange += day.shiftChange; g.excessShift += day.excessShift; g.opsLoss += day.opsLoss;
         g.totalUsedMaint += day.usedMaint; g.loadingMins += day.loadingMins;
+        g.targetFN_Sum += day.targetFN_Day || 0;
+        g.targetVOL_Sum += day.targetVOL_Day || 0;
     });
 
     let finalResults = Object.values(grouped).map(g => {
@@ -684,6 +753,10 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
     const totalYieldCount = sum('yieldCount');
     const totalOvens = sum('ovens');
 
+    // Somas das metas diárias (para Máquinas)
+    const totalTargetFN = sum('targetFN_Sum');
+    const totalTargetVOL = sum('targetVOL_Sum');
+
     let AVOL_Global, UF_Global, ADFN_Global, ADTX_Global, perfGlobal, qualGlobal;
 
     if (isPatio) {
@@ -720,12 +793,15 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
     const availGlobal = totalLoading > 0 ? (totalOperating / totalLoading) : 0;
     const oeeGlobal = availGlobal * perfGlobal * qualGlobal;
 
-    const targetOvens = isPatio ? 0 : BUSINESS_CONSTANTS.FN_META * totalDays;
+    const targetOvens = isPatio ? 0 : totalTargetFN; // Usa soma das metas diárias
     const ritmoMin = totalOvens > 0 ? (totalLoading / totalOvens) : 0;
     const targetShiftChange = isPatio ? 0 : totalDays * 3 * 60;
 
     const checkDays = new Set();
-    rawData.stops.forEach(s => {
+    const checkStopsSource = isPatio
+        ? (areaMode === 'recebimento' ? (rawData.stopsRecebimento || []) : (rawData.stopsPatio || []))
+        : (rawData.stops || []);
+    checkStopsSource.forEach(s => {
         if (s.dateStr < dateRange.start || s.dateStr > dateRange.end) return;
         checkDays.add(s.dateStr);
     });
@@ -735,104 +811,247 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
     let patioBridgeReal = null;
 
     if (isPatio) {
-        // Calcular metas acumuladas considerando dia da semana
-        let totalPPM = 0;   // Paradas Programadas Meta acumulada
-        let totalSLM = 0;   // Schedule Loss Meta acumulada
-        let totalLTM = 0;   // Loading Time Meta acumulada
-        let totalTLM = 0;   // Tempo Líquido Meta acumulado
-        let totalTLIQxDay = 0; // Soma de TLIQ * dia (para média ponderada)
+        // Metas Acumuladas
+        let totalVM = 0;
+        let totalPPM = 0;
+        let totalTTM = 0;
+        let totalSLM = 0;
+        let totalPNPM = 0;
+        let totalPOM = 0;
+        let totalCC = 0;
+        let totalLTM = 0;
+        let totalTLM = 0;
+
+        // Metas para médias
+        let daysCount = 0;
+
+        // Bridges Acumuladas (Calculadas dia a dia)
+        let bridgeSL_Vol = 0; // BVSL
+        let bridgeInd_Vol = 0; // BIND
+        let bridgeOp_Vol = 0; // BPOP
+        let bridgeTaxa_Vol = 0; // BPRT
+
         let thursdays = 0;
         let otherDays = 0;
 
-        // Calcula metas acumuladas SOMANDO os valores diários já calculados (respeita o filtro)
-        totalPPM = sum('PPM_Meta');
-        totalSLM = sum('SLM_Meta');
-        totalLTM = sum('LTM_Meta');
-        totalTLM = sum('TLM_Meta');
-        totalTLIQxDay = sum('TLIQ_Meta'); // Soma das taxas diárias para média
+        // Reais Acumulados
+        let realVR = 0;
+        let realPPR = 0;
+        let realTTR = 0; // TTR é 0, mas mantemos estrutura
+        let realPNPR = 0;
+        let realPOR = 0;
+        let realLTR = 0;
+        let realTLR = 0;
 
-        thursdays = sum('thursdaysInPeriod');
-        otherDays = sum('otherDaysInPeriod');
+        // Loop diário para cálculo preciso
+        // Se houver filtro de seleção que seja uma data (YYYY-MM-DD), restringir o loop a essa data.
+        let loopStart = dateRange.start;
+        let loopEnd = dateRange.end;
 
-        const TLIQ_avg = totalTLIQxDay / totalDays; // Taxa Líquida Meta média
+        const isDateFilter = filterSelection && filterSelection.match(/^\d{4}-\d{2}-\d{2}$/);
+        if (isDateFilter) {
+            loopStart = filterSelection;
+            loopEnd = filterSelection;
+        }
 
-        // Valores Reais do período
-        const PPR = sum('shiftChange') / 60;  // Paradas Programadas Real (h) - usou shiftChange para PP em Pátio
-        const TTR = 0; // Troca de Turno Real - não separado por enquanto
-        const SLR = PPR + TTR;
-        const PNPR = sum('failureLoss') / 60; // Indisponibilidade Real (h)
-        const POR = sum('opsLoss') / 60;      // Perda Operacional Real (h)
-        const LTR = (totalDays * BC.TC_META) - SLR;
-        const TLR = LTR - PNPR - POR;
-        const TLIQR = TLR > 0 ? totalWetCharge / TLR : 0; // Taxa Líquida Real
+        const startDateP = new Date(loopStart + 'T12:00:00');
+        const endDateP = new Date(loopEnd + 'T12:00:00');
+
+        // Mapa de dados reais por dia para acesso rápido
+        const dailyRealMap = {};
+
+        // CORREÇÃO CRÍTICA: Usar a fonte de dados correta baseada no areaMode
+        const stopsSource = areaMode === 'recebimento'
+            ? (rawData.stopsRecebimento || [])
+            : (rawData.stopsPatio || []);
+
+        // Agregar dados reais por dia
+        stopsSource.forEach(s => {
+            // Usar loopStart/loopEnd para respeitar filtro de seleção
+            if (s.dateStr >= loopStart && s.dateStr <= loopEnd) {
+                if (!dailyRealMap[s.dateStr]) dailyRealMap[s.dateStr] = { PNPR: 0, POR: 0, PPR: 0 };
+
+                const durH = (s.duration || 0) / 60;
+
+                // Mapeamento baseado no parser atual e lógica do cálculo OEE
+                const tipoLower = (s.tipo || '').toLowerCase();
+                const areaLower = (s.area || '').toLowerCase();
+
+                if (tipoLower.includes('programada') && !tipoLower.includes('não') && !tipoLower.includes('nao')) {
+                    // Programada
+                    dailyRealMap[s.dateStr].PPR += durH;
+                } else if (tipoLower.includes('não programada') || tipoLower.includes('nao programada')) {
+                    // Não Programada
+                    if (areaLower.includes('produ')) {
+                        // Produção = Perda Operacional
+                        dailyRealMap[s.dateStr].POR += durH;
+                    } else {
+                        // Manutenção ou Outros = Indisponibilidade
+                        dailyRealMap[s.dateStr].PNPR += durH;
+                    }
+                } else {
+                    // Default para Indisponibilidade
+                    dailyRealMap[s.dateStr].PNPR += durH;
+                }
+            }
+        });
+
+        // Loop Principal
+        for (let d = new Date(startDateP); d <= endDateP; d.setDate(d.getDate() + 1)) {
+            const dateStr = d.toISOString().split('T')[0];
+            const dayOfWeek = d.getDay(); // 0=Dom, 4=Qui
+            const isThursday = dayOfWeek === 4;
+
+            daysCount++;
+            if (isThursday) thursdays++; else otherDays++;
+
+            // 1. Definir Metas do Dia
+            const VOL_META = BC.VOL_META;
+            let PPM_Daily = isThursday ? BC.PPM_THURSDAY : BC.PPM_OTHER;
+            const TTM_Daily = BC.TTM;
+            const SLM_Daily = PPM_Daily + TTM_Daily;
+            const PNPM_Daily = BC.PNPM;
+            const POM_Daily = BC.POM;
+            const CC_Daily = BC.TC_META;
+
+            const LT_Daily = CC_Daily - SLM_Daily; // Loading Meta
+            const TL_Daily = LT_Daily - PNPM_Daily - POM_Daily; // Tempo Líquido Meta
+
+            const TLIQ_Daily = TL_Daily > 0 ? (VOL_META / TL_Daily) : 0; // Taxa Líquida Meta
+
+            // Acumular Metas globais
+            totalVM += VOL_META;
+            totalPPM += PPM_Daily;
+            totalTTM += TTM_Daily;
+            totalSLM += SLM_Daily;
+            totalPNPM += PNPM_Daily;
+            totalPOM += POM_Daily;
+            totalCC += CC_Daily;
+            totalLTM += LT_Daily;
+            totalTLM += TL_Daily;
+
+            // 2. Obter Reais do Dia (ou Produção)
+            // Volume Real (VR) vem de 'prod'
+            let VR_Daily = 0;
+            // Achar valor de produção para o dia específico na estrutura rawData.prod ou prodPatio
+            // A estrutura prodPatio pode ser { "YYYY-MM-DD": value } ou array
+            const prodSource = areaMode === 'recebimento' ? rawData.prodRecebimento : rawData.prodPatio;
+            // prodSource geralmente é objeto: key=data iso, value=tonelada
+            // Mas verifiquei antes que pode ser diferente. Assumindo objeto { '2025-01-01': 1000 }
+            if (prodSource && prodSource[dateStr]) {
+                VR_Daily = Number(prodSource[dateStr].wetCharge) || 0;
+            }
+
+            // Tempos Reais (dos stops mapeados)
+            const realOps = dailyRealMap[dateStr] || { PPR: 0, POR: 0, PNPR: 0 };
+            const PPR_Daily = realOps.PPR;
+            const TTR_Daily = 0; // TTR fixo em 0 conforme instrução
+            const SLR_Daily = PPR_Daily + TTR_Daily;
+            const PNPR_Daily = realOps.PNPR;
+            const POR_Daily = realOps.POR;
+
+            const LTR_Daily = CC_Daily - SLR_Daily;
+            const TLR_Daily = LTR_Daily - POR_Daily - PNPR_Daily;
+            const TLIQR_Daily = TLR_Daily > 0 ? (VR_Daily / TLR_Daily) : 0;
+
+            // Acumular Reais globais
+            realVR += VR_Daily;
+            realPPR += PPR_Daily;
+            // realTTR += 0;
+            realPNPR += PNPR_Daily;
+            realPOR += POR_Daily;
+            realLTR += LTR_Daily;
+            realTLR += TLR_Daily;
+
+            // Acumular de forma segura (evitando NaN)
+            const safeAdd = (acc, val) => {
+                const v = Number(val);
+                return acc + (isNaN(v) ? 0 : v);
+            };
+
+            // 3. Calcular Bridge do Dia
+            // BVSL = (SLM-SLR)*TLIQ
+            bridgeSL_Vol = safeAdd(bridgeSL_Vol, (SLM_Daily - SLR_Daily) * TLIQ_Daily);
+
+            // BIND = (PNPM-PNPR)*TLIQ
+            bridgeInd_Vol = safeAdd(bridgeInd_Vol, (PNPM_Daily - PNPR_Daily) * TLIQ_Daily);
+
+            // BPOP = (POM-POR)*TLIQ
+            bridgeOp_Vol = safeAdd(bridgeOp_Vol, (POM_Daily - POR_Daily) * TLIQ_Daily);
+
+            // BPRT = (TLIQR-TLIQ)*TLR (Impacto da Taxa)
+            // (TaxaReal - TaxaMeta) * TempoLiquidoReal
+            bridgeTaxa_Vol = safeAdd(bridgeTaxa_Vol, (TLIQR_Daily - TLIQ_Daily) * TLR_Daily);
+        }
+
+        const TLIQ_Weighted = totalTLM > 0 ? (totalVM / totalTLM) : 0;
+        const TLIQR_Weighted = realTLR > 0 ? (realVR / realTLR) : 0;
 
         patioBridgeMeta = {
-            VM: BC.VOL_META * totalDays,      // Volume Meta total
-            PPM: totalPPM,                    // Paradas Programadas Meta (h)
-            TTM: BC.TTM * totalDays,          // Troca de Turno Meta (h)
-            SLM: totalSLM,                    // Schedule Loss Meta (h)
-            PNPM: BC.PNPM * totalDays,        // Paradas Não Programadas Meta (h)
-            POM: BC.POM * totalDays,          // Perda Operacional Meta (h)
-            CC: BC.TC_META * totalDays,       // Ciclo Calendário (h)
-            LTM: totalLTM,                    // Loading Time Meta (h)
-            TLM: totalTLM,                    // Tempo Líquido Meta (h)
-            TLIQ: TLIQ_avg,                   // Taxa Líquida Meta média (t/h)
+            VM: totalVM,
+            PPM: totalPPM,
+            TTM: totalTTM,
+            SLM: totalSLM,
+            PNPM: totalPNPM,
+            POM: totalPOM,
+            CC: totalCC,
+            LTM: totalLTM,
+            TLM: totalTLM,
+            TLIQ: TLIQ_Weighted,
             thursdays: thursdays,
-            otherDays: otherDays
+            otherDays: otherDays,
+
+            // Valores calculados da Bridge (Volume) para uso no gráfico
+            bridgeValues: {
+                BVSL: bridgeSL_Vol,
+                BIND: bridgeInd_Vol,
+                BPOP: bridgeOp_Vol,
+                BPRT: bridgeTaxa_Vol
+            }
         };
 
         patioBridgeReal = {
-            VR: totalWetCharge,               // Volume Real
-            PPR: PPR,                         // Paradas Programadas Real (h)
-            TTR: TTR,                         // Troca de Turno Real (h)
-            SLR: SLR,                         // Schedule Loss Real (h)
-            PNPR: PNPR,                       // Indisponibilidade Real (h)
-            POR: POR,                         // Perda Operacional Real (h)
-            LTR: LTR,                         // Loading Time Real (h)
-            TLR: TLR,                         // Tempo Líquido Real (h)
-            TLIQR: TLIQR                      // Taxa Líquida Real (t/h)
+            VR: realVR,
+            PPR: realPPR,
+            TTR: realTTR,
+            SLR: realPPR + realTTR,
+            PNPR: realPNPR,
+            POR: realPOR,
+            LTR: realLTR,
+            TLR: realTLR,
+            TLIQR: TLIQR_Weighted
         };
 
-        // ============ CÁLCULO DE METAS DINÂMICAS PARA PÁTIO ============
-        // Metas variam com base na proporção de Quintas vs Outros dias
-
+        // Targets de % (Disponibilidade, Performance, OEE) baseados nos totais acumulados
         // DISPONIBILIDADE META = Operating / Loading
-        // Operating = Loading - PNPM
-        // Loading = CC - SL
-        const loadingMeta = patioBridgeMeta.CC - patioBridgeMeta.SLM;
-        const operatingMeta = loadingMeta - patioBridgeMeta.PNPM;
-        const targetDispPatio = loadingMeta > 0 ? (operatingMeta / loadingMeta) * 100 : 0;
+        const operatingMeta = totalLTM - totalPNPM;
+        const targetDispPatio = totalLTM > 0 ? (operatingMeta / totalLTM) * 100 : 0;
 
         // PERFORMANCE META = UF × ADTX (sem AVOL)
-        // UF = NetOperating / Operating = TLM / operatingMeta
-        // ADTX = TX_META / TX_TEORICO = TLIQ / TX_THEORY
-        const ufMeta = operatingMeta > 0 ? (patioBridgeMeta.TLM / operatingMeta) : 0;
+        // UF = TLM / Operating
+        // ADTX = TLIQ / TX_THEORY
+        const ufMeta = operatingMeta > 0 ? (totalTLM / operatingMeta) : 0;
         const adtxMeta = patioBridgeMeta.TLIQ / BC.TX_THEORY;
         const targetPerfPatio = (ufMeta * adtxMeta) * 100;
 
-        // QUALIDADE META = 100% (sempre para Pátio)
         const targetQualPatio = BC.QA_META;
-
-        // OEE META = DI × PE × QA
         const targetOeePatio = (targetDispPatio / 100) * (targetPerfPatio / 100) * (targetQualPatio / 100) * 100;
 
-        // Adicionar targets ao patioBridgeMeta
         patioBridgeMeta.targetDI = parseFloat(targetDispPatio.toFixed(2));
         patioBridgeMeta.targetPE = parseFloat(targetPerfPatio.toFixed(2));
         patioBridgeMeta.targetQA = parseFloat(targetQualPatio.toFixed(2));
-        patioBridgeMeta.targetOEE = parseFloat(targetOeePatio.toFixed(2));
         patioBridgeMeta.targetOEE = parseFloat(targetOeePatio.toFixed(2));
 
         // ========= PÁTIO: Calcular metas escalonadas (Média Ponderada) =========
         // P1: Jan-Mar (34.93%) | P2: Abr-Jul (35.54%) | P3: Ago-Dez (36.17%)
 
-        const startDateP = new Date(dateRange.start + 'T12:00:00');
-        const endDateP = new Date(dateRange.end + 'T12:00:00');
+        const startDateS = new Date(dateRange.start + 'T12:00:00');
+        const endDateS = new Date(dateRange.end + 'T12:00:00');
 
         let sumOEE_P = 0, sumAVAIL_P = 0, sumPERF_P = 0, sumQUAL_P = 0;
         let daysCount_P = 0;
 
-        for (let d = new Date(startDateP); d <= endDateP; d.setDate(d.getDate() + 1)) {
+        for (let d = new Date(startDateS); d <= endDateS; d.setDate(d.getDate() + 1)) {
             const month = d.getMonth(); // 0-11
             let targetSet = null;
 
@@ -992,18 +1211,26 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
             return sVal >= (8 * 60 - 15) && eVal <= (endLimit + 15);
         };
 
+        const checkTimeRange = (dateObj, targetH, targetM, minDiff, maxDiff) => {
+            if (!dateObj) return false;
+            const h = dateObj.getHours();
+            const m = dateObj.getMinutes();
+            const diff = (h * 60 + m) - (targetH * 60 + targetM);
+            return diff >= minDiff && diff <= maxDiff;
+        };
+
         if (hasNorte) {
             daysWithStopNorte++;
-            if (checkTime(minStartNorte, 8, 0, 15)) winStartOkNorte++;
-            if (checkTime(maxEndNorte, 13, 0, 15)) winEndOkNorte++;
+            if (checkTimeRange(minStartNorte, 8, 0, -15, 60)) winStartOkNorte++;
+            if (checkTimeRange(maxEndNorte, 13, 0, -15, 60)) winEndOkNorte++;
             if (checkInside(minStartNorte, maxEndNorte)) winInsideOkNorte++;
         }
         winDurPctNorteSum += Math.min(100, (durNorte / 300) * 100);
 
         if (hasSul) {
             daysWithStopSul++;
-            if (checkTime(minStartSul, 8, 0, 15)) winStartOkSul++;
-            if (checkTime(maxEndSul, 13, 0, 15)) winEndOkSul++;
+            if (checkTimeRange(minStartSul, 8, 0, -15, 60)) winStartOkSul++;
+            if (checkTimeRange(maxEndSul, 13, 0, -15, 60)) winEndOkSul++;
             if (checkInside(minStartSul, maxEndSul)) winInsideOkSul++;
         }
         winDurPctSulSum += Math.min(100, (durSul / 300) * 100);
@@ -1015,15 +1242,16 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
 
         // =========== PÁTIO: Contabilizar por Quinta vs Outros ===========
         if (isPatio && hasPatioStop) {
+            // Tolerância: -15 min a +1h (60 min)
             if (isThursday) {
                 patioDaysWithStopThursday++;
-                if (checkTime(patioMinStart, 8, 0, 15)) patioStartOkThursday++;
-                if (checkTime(patioMaxEnd, 16, 0, 15)) patioEndOkThursday++;
+                if (checkTimeRange(patioMinStart, 8, 0, -15, 60)) patioStartOkThursday++;
+                if (checkTimeRange(patioMaxEnd, 16, 0, -15, 60)) patioEndOkThursday++;
                 if (checkInsidePatio(patioMinStart, patioMaxEnd, true)) patioInsideOkThursday++;
             } else {
                 patioDaysWithStopOther++;
-                if (checkTime(patioMinStart, 8, 0, 15)) patioStartOkOther++;
-                if (checkTime(patioMaxEnd, 12, 0, 15)) patioEndOkOther++;
+                if (checkTimeRange(patioMinStart, 8, 0, -15, 60)) patioStartOkOther++;
+                if (checkTimeRange(patioMaxEnd, 12, 0, -15, 60)) patioEndOkOther++;
                 if (checkInsidePatio(patioMinStart, patioMaxEnd, false)) patioInsideOkOther++;
             }
         }
@@ -1044,7 +1272,7 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
         ovensNumeric: totalOvens,
         ovensDisplay: totalOvens.toLocaleString('pt-BR'),
         targetOvens: targetOvens,
-        targetVolume: isPatio ? (BC.VOL_META * totalDays) : (BUSINESS_CONSTANTS.FN_META * BUSINESS_CONSTANTS.VOL_META * totalDays),
+        targetVolume: isPatio ? (BC.VOL_META * totalDays) : totalTargetVOL, // Usa soma das metas diárias
         lossDispH: (sum('lossDisp') / 60).toFixed(1),
         lossUtilH: (sum('lossUtil') / 60).toFixed(1),
         lossFailH: (sum('failureLoss') / 60).toFixed(1),
@@ -1092,10 +1320,10 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
         patioEndOkThursday,
         patioEndOkOther,
 
-        // ============ BRIDGE CHART MÁQUINAS - NOVA LÓGICA ============
         // Constantes calculadas (Metas derivadas) - PROPORCIONAIS AO PERÍODO
+        // Usar totais acumulados das metas diárias para Máquinas
         bridgeMeta: {
-            FM: BC.FN_META * totalDays,                               // Fornos Meta = 160 * dias
+            FM: totalTargetFN,                                        // Fornos Meta (Soma diária)
             PPM: 10 * 60 * totalDays,                                 // Paradas Programadas Meta = 10h * dias
             TTM: 3 * 60 * totalDays,                                  // Troca de Turno Meta = 3h * dias
             PNPM: BC.CO_META * 60 * totalDays,                        // Paradas Não Programadas Meta = 3h * dias
@@ -1103,7 +1331,11 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
             CC: BC.TC_META * 60 * totalDays,                          // Ciclo Calendário = 48h * dias
             LT: (BC.TC_META - 10 - 3) * 60 * totalDays,               // Loading Time Meta = 35h * dias
             TL: (BC.TC_META - 10 - 3 - BC.CO_META - BC.STP_META) * 60 * totalDays, // Tempo Líquido Meta = 30h * dias
-            FFL: ((BC.TC_META - 10 - 3 - BC.CO_META - BC.STP_META) * 60) / BC.FN_META, // 11.25 min/forno (NÃO muda com dias)
+
+            // FFL é o ciclo médio ideal. Se a meta de fornos muda, o ciclo ideal muda?
+            // FFL = TL / FM. Se temos valores variados, usamos os totais.
+            FFL: totalTargetFN > 0 ? ((BC.TC_META - 10 - 3 - BC.CO_META - BC.STP_META) * 60 * totalDays) / totalTargetFN : ((BC.TC_META - 10 - 3 - BC.CO_META - BC.STP_META) * 60) / BC.FN_META,
+
             DM: ((BC.TC_META - 10 - 3) * 60 - BC.CO_META * 60) / ((BC.TC_META - 10 - 3) * 60), // 91.43% (percentual)
             UM: (((BC.TC_META - 10 - 3 - BC.CO_META) * 60) - BC.STP_META * 60) / ((BC.TC_META - 10 - 3 - BC.CO_META) * 60) // 93.75% (percentual)
         },
@@ -1469,22 +1701,41 @@ export const calculateParetoData = (rawData, dateRange, filterSelection, aggrega
     return { topEquipmentsData: processPareto(reasonsEquip), topCausesData: processPareto(reasonsCause), topDisciplinasData: processPareto(reasonsDisciplina) };
 };
 
-export const calculateWindowHoursData = (rawData, dateRange, aggregation) => {
+export const calculateWindowHoursData = (rawData, dateRange, aggregation, areaMode = 'maquinas') => {
     // Calcula as horas de janela por período para Norte e Sul
     if (!rawData.stops || rawData.stops.length === 0) return [];
 
     const windowStopsMap = {};
+    const isPatio = areaMode === 'patio' || areaMode === 'recebimento';
 
     rawData.stops.forEach(s => {
         if (s.dateStr < dateRange.start || s.dateStr > dateRange.end) return;
 
-        const bateriaLower = (s.bateria || '').toLowerCase();
-        const isJanela = bateriaLower.includes('janela a/b') || bateriaLower.includes('janela c/d');
-        if (!isJanela) return;
+        let isTargetStop = false;
+        let isNorte = false; // Ignored for Patio
+
+        if (isPatio) {
+            // Pátio logic: Programada AND Manutenção Preventiva
+            const tipoLower = (s.tipo || '').toLowerCase();
+            const disciplinaLower = (s.disciplina || '').toLowerCase();
+            if (tipoLower.includes('programada') && !tipoLower.includes('não') && disciplinaLower.includes('preventiva')) {
+                isTargetStop = true;
+                isNorte = true; // Use 'Norte' bucket for the single bar
+            }
+        } else {
+            // Maquinas logic: Based on Bateria (Janela A/B...)
+            const bateriaLower = (s.bateria || '').toLowerCase();
+            const isJanela = bateriaLower.includes('janela a/b') || bateriaLower.includes('janela c/d');
+            if (isJanela) {
+                isTargetStop = true;
+                const quenchLower = (s.quench || '').toLowerCase();
+                isNorte = quenchLower.includes('norte') || quenchLower.includes('north');
+            }
+        }
+
+        if (!isTargetStop) return;
 
         const { key, label } = getAggregationKey(s.dateStr, aggregation);
-        const quenchLower = (s.quench || '').toLowerCase();
-        const isNorte = quenchLower.includes('norte') || quenchLower.includes('north');
 
         if (!windowStopsMap[key]) {
             windowStopsMap[key] = { key, label, minsNorte: 0, minsSul: 0 };
@@ -1498,6 +1749,7 @@ export const calculateWindowHoursData = (rawData, dateRange, aggregation) => {
     });
 
     // Tolerância: 5h = 300 min, tolerância de ±10 min = [290, 310]
+    // For Patio usually targets might differ, but assuming 5h logic for chart consistency properly
     const TARGET_MIN = 290;
     const TARGET_MAX = 310;
 
@@ -1506,6 +1758,7 @@ export const calculateWindowHoursData = (rawData, dateRange, aggregation) => {
         const hoursSul = parseFloat((d.minsSul / 60).toFixed(2));
 
         // Verde se dentro da tolerância (4h50 - 5h10), vermelho caso contrário ou zerado
+        // NOTE: For Patio, targets might need adjustment in future steps if 5h is not the goal.
         const isOkNorte = d.minsNorte >= TARGET_MIN && d.minsNorte <= TARGET_MAX;
         const isOkSul = d.minsSul >= TARGET_MIN && d.minsSul <= TARGET_MAX;
 
