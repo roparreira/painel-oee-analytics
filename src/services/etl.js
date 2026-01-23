@@ -154,7 +154,7 @@ export const processFiles = async (fileStop, fileProd, fileDespacho = null, file
 
         // Para Pátio (Envio/Recebimento): usar coluna Z (Data de Produção). Para Máquinas: calcular de início.
         let dateStr;
-        if ((isPatioProc && isEnvio) || (isPatioProc && isRecebimento)) {
+        if (isPatioEnvio || isPatioReceb) {
             const dataProdVal = parseDate(r[idxS.dataProd]);
             if (dataProdVal) {
                 dateStr = formatDateISO(dataProdVal);
@@ -200,13 +200,13 @@ export const processFiles = async (fileStop, fileProd, fileDespacho = null, file
         }
 
         // Processar Pátio/Envio (independente de 'parou')
-        if (isPatioProc && isEnvio) {
+        if (isPatioEnvio) {
             totalStopDurationPatio += safeDuration;
             cleanStopsPatio.push(stopRecord);
         }
 
         // Processar Pátio/Recebimento (independente de 'parou')
-        if (isPatioProc && isRecebimento) {
+        if (isPatioReceb) {
             totalStopDurationRecebimento += safeDuration;
             cleanStopsRecebimento.push(stopRecord);
         }

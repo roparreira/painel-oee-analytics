@@ -8,6 +8,7 @@ export default function UploadScreen({ onDataReady }) {
     const [files, setFiles] = useState({ stop: null, prod: null, despacho: null, recebimento: null });
     const [loading, setLoading] = useState(false);
     const [errorLog, setErrorLog] = useState("");
+    const [autoLoaded, setAutoLoaded] = useState(false);
 
     const isPublicDomain = window.location.hostname.includes('netlify.app') || window.location.hostname.includes('github.io');
 
