@@ -36,9 +36,9 @@ const AvailabilityCausesChart = ({ data, rawData, target, type = 'availability',
                 const disciplina = (s.disciplina || '').toUpperCase().trim();
                 const isAMT = disciplina === 'AMT';
 
-                // Check stop type (Programada vs Não Programada)
-                const isProgramada = tipoLower.includes('prevent') || tipoLower.includes('programada');
-                const isNaoProgramada = tipoLower.includes('corretiva') || tipoLower.includes('não programada') || tipoLower.includes('nao programada') || tipoLower.includes('quebra');
+                // Check stop type using Column K values directly: "Programada" vs "Não Programada"
+                const isProgramada = tipoLower.includes('programada') && !tipoLower.includes('não') && !tipoLower.includes('nao');
+                const isNaoProgramada = tipoLower.includes('não programada') || tipoLower.includes('nao programada');
 
                 // Filter by stop type if active
                 if (stopTypeFilter === 'programada' && !isProgramada) return;

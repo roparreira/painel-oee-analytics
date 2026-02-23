@@ -478,7 +478,7 @@ export default function OEEDashboardContent({ rawData, initialDateRange, areaMod
                                     {/* MÁQUINAS: Pontualidade Início */}
                                     <div className="col-span-1 h-32"><CheckCardDual title="Pontualidade Início" valNorte={activeAggregates.winStartOkNorte} totalNorte={activeAggregates.daysWithStopNorte} valSul={activeAggregates.winStartOkSul} totalSul={activeAggregates.daysWithStopSul} sub="Início 08:00 (-15min / +1h)" icon={PlayCircle} /></div>
                                     {/* MÁQUINAS: Pontualidade Fim */}
-                                    <div className="col-span-1 h-32"><CheckCardDual title="Pontualidade Fim" valNorte={activeAggregates.winEndOkNorte} totalNorte={activeAggregates.daysWithStopNorte} valSul={activeAggregates.winEndOkSul} totalSul={activeAggregates.daysWithStopSul} sub="Término 13:00 (-15min / +1h)" icon={StopCircle} /></div>
+                                    <div className="col-span-1 h-32"><CheckCardDual title="Pontualidade Fim" valNorte={activeAggregates.winEndOkNorte} totalNorte={activeAggregates.daysWithStopNorte} valSul={activeAggregates.winEndOkSul} totalSul={activeAggregates.daysWithStopSul} sub="Término 13:00 (-1h / +1h)" icon={StopCircle} /></div>
                                 </>
                             ) : (
                                 <>

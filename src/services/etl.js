@@ -131,16 +131,13 @@ export const processFiles = async (fileStop, fileProd, fileDespacho = null, file
         const isMaquina = valProc.includes('maquina') || valProc.includes('máquina');
         const isPatioKeyword = valProc.includes('patio') || valProc.includes('pátio');
 
-        // Detecção de zona (Envio vs Recebimento)
-        const isEnvio = valLinha.includes('envio') || valProc.includes('envio') || valArea.includes('envio') ||
-            valLinha.includes('expedi') || valProc.includes('expedi') || valArea.includes('expedi');
+        // Detecção de zona via Coluna C (Linha/Zona) - discriminador exclusivo
+        const isEnvio = valLinha.includes('envio') || valLinha.includes('expedi');
+        const isRecebimento = valLinha.includes('recebimento') || valLinha.includes('descarga') || valLinha.includes('recep');
 
-        const isRecebimento = valLinha.includes('recebimento') || valProc.includes('recebimento') || valArea.includes('recebimento') ||
-            valLinha.includes('descarga') || valProc.includes('descarga') || valArea.includes('descarga') ||
-            valLinha.includes('recep') || valProc.includes('recep') || valArea.includes('recep');
-
-        const isPatioEnvio = (isPatioKeyword || isEnvio) && !isMaquina;
-        const isPatioReceb = (isPatioKeyword || isRecebimento) && !isMaquina;
+        // Pátio (Col B) + Zona (Col C) = área exclusiva
+        const isPatioEnvio = isPatioKeyword && isEnvio && !isMaquina;
+        const isPatioReceb = isPatioKeyword && isRecebimento && !isMaquina;
 
         // Ignorar se não for nenhum dos tipos conhecidos
         if (!isMaquina && !isPatioEnvio && !isPatioReceb) {
@@ -809,9 +806,7 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
     const targetShiftChange = isPatio ? 0 : totalDays * 3 * 60;
 
     const checkDays = new Set();
-    const checkStopsSource = isPatio
-        ? (areaMode === 'recebimento' ? (rawData.stopsRecebimento || []) : (rawData.stopsPatio || []))
-        : (rawData.stops || []);
+    const checkStopsSource = rawData.stops || [];
     checkStopsSource.forEach(s => {
         if (s.dateStr < dateRange.start || s.dateStr > dateRange.end) return;
         checkDays.add(s.dateStr);
@@ -871,10 +866,8 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
         // Mapa de dados reais por dia para acesso rápido
         const dailyRealMap = {};
 
-        // CORREÇÃO CRÍTICA: Usar a fonte de dados correta baseada no areaMode
-        const stopsSource = areaMode === 'recebimento'
-            ? (rawData.stopsRecebimento || [])
-            : (rawData.stopsPatio || []);
+        // CORREÇÃO: rawData já contém os stops da área correta (via activeRawData)
+        const stopsSource = rawData.stops || [];
 
         // Agregar dados reais por dia
         stopsSource.forEach(s => {
@@ -946,7 +939,7 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
             let VR_Daily = 0;
             // Achar valor de produção para o dia específico na estrutura rawData.prod ou prodPatio
             // A estrutura prodPatio pode ser { "YYYY-MM-DD": value } ou array
-            const prodSource = areaMode === 'recebimento' ? rawData.prodRecebimento : rawData.prodPatio;
+            const prodSource = rawData.prod;
             // prodSource geralmente é objeto: key=data iso, value=tonelada
             // Mas verifiquei antes que pode ser diferente. Assumindo objeto { '2025-01-01': 1000 }
             if (prodSource && prodSource[dateStr]) {
@@ -1244,7 +1237,7 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
         if (hasNorte) {
             daysWithStopNorte++;
             if (checkTimeRange(minStartNorte, 8, 0, -15, 60)) winStartOkNorte++;
-            if (checkTimeRange(maxEndNorte, 13, 0, -15, 60)) winEndOkNorte++;
+            if (checkTimeRange(maxEndNorte, 13, 0, -60, 60)) winEndOkNorte++;
             if (checkInside(minStartNorte, maxEndNorte)) winInsideOkNorte++;
         }
         winDurPctNorteSum += Math.min(100, (durNorte / 300) * 100);
@@ -1252,7 +1245,7 @@ export const calculateDashboardAggregates = (calculatedData, rawData, dateRange,
         if (hasSul) {
             daysWithStopSul++;
             if (checkTimeRange(minStartSul, 8, 0, -15, 60)) winStartOkSul++;
-            if (checkTimeRange(maxEndSul, 13, 0, -15, 60)) winEndOkSul++;
+            if (checkTimeRange(maxEndSul, 13, 0, -60, 60)) winEndOkSul++;
             if (checkInside(minStartSul, maxEndSul)) winInsideOkSul++;
         }
         winDurPctSulSum += Math.min(100, (durSul / 300) * 100);

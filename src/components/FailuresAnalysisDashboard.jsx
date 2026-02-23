@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { AlertTriangle, CheckCircle, Clock, Users, MapPin, Calendar, TrendingUp, FileText, Filter, X, ChevronDown, RefreshCw, Database, DollarSign, BarChart3, ClipboardList, AlertCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, Users, MapPin, Calendar, TrendingUp, FileText, Filter, X, ChevronDown, RefreshCw, Database, DollarSign, BarChart3, ClipboardList, AlertCircle, Search, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { Card } from './UI';
 import ActionsEvolutionChart from '../charts/ActionsEvolutionChart';
 import ActionsParetoChart from '../charts/ActionsParetoChart';
@@ -466,6 +466,9 @@ export default function FailuresAnalysisDashboard({ activeSubTab = 'rcfas', setA
     const [acoesError, setAcoesError] = useState(null);
     const [acoesLastUpdated, setAcoesLastUpdated] = useState(null);
 
+    // Sync state
+    const [syncing, setSyncing] = useState(false);
+
     // Filtros RCFAs (date range)
     const [rcfaDateRange, setRcfaDateRange] = useState(defaultRange);
     const [selectedLocal, setSelectedLocal] = useState(null);
@@ -479,47 +482,64 @@ export default function FailuresAnalysisDashboard({ activeSubTab = 'rcfas', setA
     const [selectedTipoAcao, setSelectedTipoAcao] = useState(null);
     const [showOnlyAtrasadas, setShowOnlyAtrasadas] = useState(false);
 
-    // Carregar dados RCFAs
-    useEffect(() => {
-        const loadData = async () => {
-            setAfLoading(true);
-            setAfError(null);
-            try {
-                const response = await fetch('/af_data.json');
-                if (!response.ok) throw new Error('Arquivo af_data.json não encontrado');
-                const json = await response.json();
-                setAfData(json.data || []);
-                setAfLastUpdated(json.lastUpdated);
-            } catch (err) {
-                setAfError(err.message);
-                setAfData([]);
-            } finally {
-                setAfLoading(false);
-            }
-        };
-        loadData();
-    }, []);
+    // Pesquisa e ordenação da tabela de Ações
+    const [acoesSearch, setAcoesSearch] = useState('');
+    const [acoesSort, setAcoesSort] = useState({ key: null, dir: 'asc' });
 
-    // Carregar dados Ações
-    useEffect(() => {
-        const loadData = async () => {
-            setAcoesLoading(true);
-            setAcoesError(null);
-            try {
-                const response = await fetch('/af_acoes.json');
-                if (!response.ok) throw new Error('Arquivo af_acoes.json não encontrado');
-                const json = await response.json();
-                setAcoesData(json.data || []);
-                setAcoesLastUpdated(json.lastUpdated);
-            } catch (err) {
-                setAcoesError(err.message);
-                setAcoesData([]);
-            } finally {
-                setAcoesLoading(false);
-            }
-        };
-        loadData();
-    }, []);
+    // Função para carregar dados RCFAs
+    const loadRcfaData = async () => {
+        setAfLoading(true);
+        setAfError(null);
+        try {
+            const response = await fetch('/af_data.json?t=' + Date.now());
+            if (!response.ok) throw new Error('Arquivo af_data.json não encontrado');
+            const json = await response.json();
+            setAfData(json.data || []);
+            setAfLastUpdated(json.lastUpdated);
+        } catch (err) {
+            setAfError(err.message);
+            setAfData([]);
+        } finally {
+            setAfLoading(false);
+        }
+    };
+
+    // Função para carregar dados Ações
+    const loadAcoesData = async () => {
+        setAcoesLoading(true);
+        setAcoesError(null);
+        try {
+            const response = await fetch('/af_acoes.json?t=' + Date.now());
+            if (!response.ok) throw new Error('Arquivo af_acoes.json não encontrado');
+            const json = await response.json();
+            setAcoesData(json.data || []);
+            setAcoesLastUpdated(json.lastUpdated);
+        } catch (err) {
+            setAcoesError(err.message);
+            setAcoesData([]);
+        } finally {
+            setAcoesLoading(false);
+        }
+    };
+
+    // Carregar dados iniciais
+    useEffect(() => { loadRcfaData(); }, []);
+    useEffect(() => { loadAcoesData(); }, []);
+
+    // Sincronizar dados com Oracle/Maximo e recarregar
+    const handleSyncData = async () => {
+        setSyncing(true);
+        try {
+            const res = await fetch('/api/sync-af-data', { method: 'POST' });
+            if (!res.ok) throw new Error('Falha na sincronização');
+            // Recarregar ambos os dados após a sincronização
+            await Promise.all([loadRcfaData(), loadAcoesData()]);
+        } catch (err) {
+            console.error('Erro ao sincronizar:', err);
+        } finally {
+            setSyncing(false);
+        }
+    };
 
     // Opções de filtro RCFAs
     const rcfaFilterOptions = useMemo(() => {
@@ -662,6 +682,18 @@ export default function FailuresAnalysisDashboard({ activeSubTab = 'rcfas', setA
                             </h2>
                             <p className="text-[10px] text-slate-400">{lastUpdated ? `Atualizado: ${lastUpdated}` : 'Maximo/Oracle'}</p>
                         </div>
+                        <button
+                            onClick={handleSyncData}
+                            disabled={syncing}
+                            title="Sincronizar dados do Maximo/Oracle"
+                            className={`ml-2 p-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${syncing
+                                ? 'bg-orange-100 text-orange-400 cursor-wait'
+                                : 'bg-orange-50 text-orange-600 hover:bg-orange-100 hover:shadow-sm'
+                                }`}
+                        >
+                            <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
+                            {syncing ? 'Sincronizando...' : 'Atualizar Dados'}
+                        </button>
                     </div>
 
                     {/* Filtros */}
@@ -868,46 +900,114 @@ export default function FailuresAnalysisDashboard({ activeSubTab = 'rcfas', setA
 
                         {/* Tabela de Ações */}
                         <Card className="p-4 mt-6">
-                            <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2"><ClipboardList size={16} /> Lista de Ações</h3>
-                            <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-                                <table className="w-full text-xs">
-                                    <thead className="sticky top-0 bg-slate-100">
-                                        <tr>
-                                            <th className="px-3 py-2 text-left font-bold text-slate-600">Ação</th>
-                                            <th className="px-3 py-2 text-left font-bold text-slate-600">RCFA</th>
-                                            <th className="px-3 py-2 text-left font-bold text-slate-600">Ocorrência</th>
-                                            <th className="px-3 py-2 text-left font-bold text-slate-600">Prazo</th>
-                                            <th className="px-3 py-2 text-left font-bold text-slate-600">Status</th>
-                                            <th className="px-3 py-2 text-left font-bold text-slate-600">Responsável</th>
-                                            <th className="px-3 py-2 text-left font-bold text-slate-600 min-w-[250px]">Descrição</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {filteredAcoesData.slice(0, 100).map((d, i) => (
-                                            <tr key={i} className={`border-b border-slate-100 hover:bg-slate-50 ${d.ATRASADA ? 'bg-red-50' : ''}`}>
-                                                <td className="px-3 py-2 font-bold text-blue-600 whitespace-nowrap">{d.ACAO}</td>
-                                                <td className="px-3 py-2 text-orange-600 whitespace-nowrap">{d.RCFA}</td>
-                                                <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{d.OCORRENCIA}</td>
-                                                <td className="px-3 py-2 whitespace-nowrap">
-                                                    <span className={d.ATRASADA ? 'text-red-600 font-bold' : 'text-slate-600'}>{d.PRAZO}</span>
-                                                    {d.ATRASADA && <span className="ml-1 text-[9px] bg-red-500 text-white px-1 rounded">ATRASADA</span>}
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${d.STATUS_CALCULADO === 'Finalizado' ? 'bg-green-100 text-green-700' :
-                                                        d.STATUS_CALCULADO === 'Finalizado Atrasado' ? 'bg-yellow-100 text-yellow-700' :
-                                                            d.STATUS_CALCULADO === 'No Prazo' ? 'bg-blue-100 text-blue-700' :
-                                                                d.STATUS_CALCULADO === 'Atrasado' ? 'bg-red-100 text-red-700' :
-                                                                    'bg-slate-100 text-slate-600'
-                                                        }`}>{d.STATUS_CALCULADO}</span>
-                                                </td>
-                                                <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{d.RESPONSAVEL}</td>
-                                                <td className="px-3 py-2 text-slate-700" title={d.DESCRICAO_ACAO}>{(d.DESCRICAO_ACAO || '').slice(0, 60)}{(d.DESCRICAO_ACAO || '').length > 60 ? '...' : ''}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                                {filteredAcoesData.length > 100 && <p className="text-[10px] text-slate-400 mt-2 text-center">Mostrando 100 de {filteredAcoesData.length} registros</p>}
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-3">
+                                <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2"><ClipboardList size={16} /> Lista de Ações</h3>
+                                <div className="relative w-full sm:w-72">
+                                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="Pesquisar em todas as colunas..."
+                                        value={acoesSearch}
+                                        onChange={e => setAcoesSearch(e.target.value)}
+                                        className="w-full pl-9 pr-8 py-2 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent bg-white shadow-sm"
+                                    />
+                                    {acoesSearch && (
+                                        <button onClick={() => setAcoesSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                                            <X size={14} />
+                                        </button>
+                                    )}
+                                </div>
                             </div>
+                            {(() => {
+                                const searchLower = acoesSearch.toLowerCase().trim();
+                                const searchedData = searchLower
+                                    ? filteredAcoesData.filter(d =>
+                                        [d.ACAO, d.RCFA, d.OCORRENCIA, d.PRAZO, d.STATUS_CALCULADO, d.RESPONSAVEL, d.DESCRICAO_ACAO, d.DESCRICAO_RCFA, d.LOCAL, d.TIPO_ACAO]
+                                            .some(v => v && String(v).toLowerCase().includes(searchLower))
+                                    )
+                                    : filteredAcoesData;
+
+                                const sortedData = acoesSort.key
+                                    ? [...searchedData].sort((a, b) => {
+                                        const valA = a[acoesSort.key] ?? '';
+                                        const valB = b[acoesSort.key] ?? '';
+                                        const cmp = String(valA).localeCompare(String(valB), 'pt-BR', { numeric: true });
+                                        return acoesSort.dir === 'asc' ? cmp : -cmp;
+                                    })
+                                    : searchedData;
+
+                                const columns = [
+                                    { key: 'ACAO', label: 'Ação' },
+                                    { key: 'RCFA', label: 'RCFA' },
+                                    { key: 'OCORRENCIA', label: 'Ocorrência' },
+                                    { key: 'PRAZO', label: 'Prazo' },
+                                    { key: 'STATUS_CALCULADO', label: 'Status' },
+                                    { key: 'RESPONSAVEL', label: 'Responsável' },
+                                    { key: 'DESCRICAO_ACAO', label: 'Descrição', minW: '250px' },
+                                ];
+
+                                const handleSort = (key) => {
+                                    setAcoesSort(prev => ({
+                                        key,
+                                        dir: prev.key === key && prev.dir === 'asc' ? 'desc' : 'asc'
+                                    }));
+                                };
+
+                                const SortIcon = ({ colKey }) => {
+                                    if (acoesSort.key !== colKey) return <ArrowUpDown size={10} className="text-slate-300 ml-1" />;
+                                    return acoesSort.dir === 'asc'
+                                        ? <ArrowUp size={10} className="text-orange-500 ml-1" />
+                                        : <ArrowDown size={10} className="text-orange-500 ml-1" />;
+                                };
+
+                                return (
+                                    <>
+                                        <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+                                            <table className="w-full text-xs">
+                                                <thead className="sticky top-0 bg-slate-100 z-10">
+                                                    <tr>
+                                                        {columns.map(col => (
+                                                            <th
+                                                                key={col.key}
+                                                                onClick={() => handleSort(col.key)}
+                                                                className="px-3 py-2 text-left font-bold text-slate-600 cursor-pointer select-none hover:bg-slate-200 transition-colors whitespace-nowrap"
+                                                                style={col.minW ? { minWidth: col.minW } : undefined}
+                                                            >
+                                                                <span className="flex items-center gap-0.5">{col.label}<SortIcon colKey={col.key} /></span>
+                                                            </th>
+                                                        ))}
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {sortedData.slice(0, 200).map((d, i) => (
+                                                        <tr key={i} className={`border-b border-slate-100 hover:bg-slate-50 ${d.ATRASADA ? 'bg-red-50' : ''}`}>
+                                                            <td className="px-3 py-2 font-bold text-blue-600 whitespace-nowrap">{d.ACAO}</td>
+                                                            <td className="px-3 py-2 text-orange-600 whitespace-nowrap">{d.RCFA}</td>
+                                                            <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{d.OCORRENCIA}</td>
+                                                            <td className="px-3 py-2 whitespace-nowrap">
+                                                                <span className={d.ATRASADA ? 'text-red-600 font-bold' : 'text-slate-600'}>{d.PRAZO}</span>
+                                                                {d.ATRASADA && <span className="ml-1 text-[9px] bg-red-500 text-white px-1 rounded">ATRASADA</span>}
+                                                            </td>
+                                                            <td className="px-3 py-2">
+                                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${d.STATUS_CALCULADO === 'Finalizado' ? 'bg-green-100 text-green-700' :
+                                                                    d.STATUS_CALCULADO === 'Finalizado Atrasado' ? 'bg-yellow-100 text-yellow-700' :
+                                                                        d.STATUS_CALCULADO === 'No Prazo' ? 'bg-blue-100 text-blue-700' :
+                                                                            d.STATUS_CALCULADO === 'Atrasado' ? 'bg-red-100 text-red-700' :
+                                                                                'bg-slate-100 text-slate-600'
+                                                                    }`}>{d.STATUS_CALCULADO}</span>
+                                                            </td>
+                                                            <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{d.RESPONSAVEL}</td>
+                                                            <td className="px-3 py-2 text-slate-700" title={d.DESCRICAO_ACAO}>{(d.DESCRICAO_ACAO || '').slice(0, 60)}{(d.DESCRICAO_ACAO || '').length > 60 ? '...' : ''}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        {searchLower && <p className="text-[10px] text-orange-500 mt-2 text-center font-bold">{sortedData.length} resultado(s) encontrado(s)</p>}
+                                        {sortedData.length > 200 && <p className="text-[10px] text-slate-400 mt-1 text-center">Mostrando 200 de {sortedData.length} registros</p>}
+                                    </>
+                                );
+                            })()}
                         </Card>
                     </>
                 )}

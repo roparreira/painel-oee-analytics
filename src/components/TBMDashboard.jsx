@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card } from './UI';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell } from 'recharts';
-import { Calendar, Users, Clock, AlertTriangle, FileText } from 'lucide-react';
+import { Calendar, Users, Clock, AlertTriangle, FileText, RefreshCw } from 'lucide-react';
 
 const COLORS = {
     primary: '#f97316', // orange-500
@@ -51,33 +51,48 @@ export default function TBMDashboard() {
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [lastUpdated, setLastUpdated] = useState(null);
-    const [statusFilter, setStatusFilter] = useState(null); // 'on_time', 'overdue', or null
+    const [statusFilter, setStatusFilter] = useState(null);
+    const [syncing, setSyncing] = useState(false);
 
-    useEffect(() => {
-        fetch('./tbm_data.json')
-            .then(res => res.json())
-            .then(json => {
-                const rawData = json.data || [];
-                // Normalizar códigos de equipamento
-                const normalized = rawData.map(item => {
-                    const newItem = { ...item };
-                    if (newItem.LOCAL_MP && String(newItem.LOCAL_MP).toUpperCase() === '9621A') {
-                        newItem.LOCAL_MP = 'PCM A';
-                    }
-                    if (newItem.LOCAL_TAREFA && String(newItem.LOCAL_TAREFA).toUpperCase().includes('9621A')) {
-                        newItem.LOCAL_TAREFA = String(newItem.LOCAL_TAREFA).toUpperCase().replace('9621A', 'PCM A');
-                    }
-                    return newItem;
-                });
-                setData(normalized);
-                setLastUpdated(json.lastUpdated);
-                setLoading(false);
-            })
-            .catch(err => {
-                console.error("Erro ao carregar dados TBM:", err);
-                setLoading(false);
+    const loadData = async () => {
+        setLoading(true);
+        try {
+            const res = await fetch('./tbm_data.json?t=' + Date.now());
+            const json = await res.json();
+            const rawData = json.data || [];
+            const normalized = rawData.map(item => {
+                const newItem = { ...item };
+                if (newItem.LOCAL_MP && String(newItem.LOCAL_MP).toUpperCase() === '9621A') {
+                    newItem.LOCAL_MP = 'PCM A';
+                }
+                if (newItem.LOCAL_TAREFA && String(newItem.LOCAL_TAREFA).toUpperCase().includes('9621A')) {
+                    newItem.LOCAL_TAREFA = String(newItem.LOCAL_TAREFA).toUpperCase().replace('9621A', 'PCM A');
+                }
+                return newItem;
             });
-    }, []);
+            setData(normalized);
+            setLastUpdated(json.lastUpdated);
+        } catch (err) {
+            console.error("Erro ao carregar dados TBM:", err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => { loadData(); }, []);
+
+    const handleSyncData = async () => {
+        setSyncing(true);
+        try {
+            const res = await fetch('/api/sync-af-data', { method: 'POST' });
+            if (!res.ok) throw new Error('Falha na sincronização');
+            await loadData();
+        } catch (err) {
+            console.error('Erro ao sincronizar TBM:', err);
+        } finally {
+            setSyncing(false);
+        }
+    };
 
     // KPIs Calculation
     const kpis = useMemo(() => {
@@ -192,15 +207,29 @@ export default function TBMDashboard() {
         <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50">
             {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                <div>
-                    <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                        <Clock className="text-orange-500" />
-                        Manutenção Baseada no Tempo (TBM)
-                    </h2>
-                    <p className="text-sm text-slate-500">
-                        Visão geral do plano de manutenção preventiva e rotinas periódicas.
-                        {lastUpdated && <span className="ml-2 text-xs bg-slate-100 px-2 py-0.5 rounded border border-slate-200">Atualizado em: {lastUpdated}</span>}
-                    </p>
+                <div className="flex items-center gap-3">
+                    <div>
+                        <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                            <Clock className="text-orange-500" />
+                            Manutenção Baseada no Tempo (TBM)
+                        </h2>
+                        <p className="text-sm text-slate-500">
+                            Visão geral do plano de manutenção preventiva e rotinas periódicas.
+                            {lastUpdated && <span className="ml-2 text-xs bg-slate-100 px-2 py-0.5 rounded border border-slate-200">Atualizado em: {lastUpdated}</span>}
+                        </p>
+                    </div>
+                    <button
+                        onClick={handleSyncData}
+                        disabled={syncing}
+                        title="Sincronizar dados do Maximo/Oracle"
+                        className={`ml-2 p-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${syncing
+                                ? 'bg-orange-100 text-orange-400 cursor-wait'
+                                : 'bg-orange-50 text-orange-600 hover:bg-orange-100 hover:shadow-sm'
+                            }`}
+                    >
+                        <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
+                        {syncing ? 'Sincronizando...' : 'Atualizar Dados'}
+                    </button>
                 </div>
             </div>
 

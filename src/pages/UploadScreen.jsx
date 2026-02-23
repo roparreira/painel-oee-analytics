@@ -25,6 +25,11 @@ export default function UploadScreen({ onDataReady }) {
             }
             if (!res.ok) throw new Error(`Falha na conexão (${res.status})`);
 
+            const contentType = res.headers.get("content-type");
+            if (!contentType || !contentType.includes("application/json")) {
+                throw new Error("O servidor respondeu com um formato inválido (HTML). Isso significa que o Backend Node.js não está rodando. Por favor, execute o script 'server.js' no servidor.");
+            }
+
             const json = await res.json();
             if (!json.success) throw new Error(json.error || "Falha ao carregar arquivos");
 
