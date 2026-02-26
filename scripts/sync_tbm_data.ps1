@@ -13,6 +13,7 @@ $query = @"
 select
   p.pmnum as MP,
   p.description as DESCRICAO_MP,
+  p.status as STATUS_MP,
   p.crewid as EQUIPE,
   p.location as LOCAL_MP,
   p.frequency as FREQUENCIA,
@@ -31,11 +32,10 @@ select
   p.nextdate as PROXIMO_VENCIMENTO
 from
   maximo.pm p
-  join maximo.jobplan j on j.jpnum = p.jpnum and j.status = 'ATIVO'
+  join maximo.jobplan j on j.jpnum = p.jpnum
   join maximo.joblabor jl on jl.jobplanid = j.jobplanid
   left join maximo.jobtask t on t.jpnum = j.jpnum and t.pluscjprevnum = j.PLUSCREVNUM and t.jptask = jl.jptask
 where
-  p.status = 'ATIVO' and
   (p.frequency <> 0 and p.frequency <= 370) and
   p.crewid not in ('LIMP MOV MAT', 'REFRATARIO', 'SEG INSP')
 "@
